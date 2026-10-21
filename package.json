@@ -1,0 +1,25 @@
+{
+  "name": "onu-activator",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "net-snmp": "^3.26.3",
+    "node-cron": "^4.2.1",
+    "node-routeros": "^1.6.8",
+    "node-ssh": "^13.2.1",
+    "path-to-regexp": "^6.3.0",
+    "telnet-client": "^2.2.13"
+  }
+}

@@ -1,0 +1,2351 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<script>
+// ─── AUTH GUARD ───
+(function() {
+  const token = localStorage.getItem('nocs_token');
+  if (!token) { window.location.href = '/login.html?redirect=' + encodeURIComponent(window.location.pathname); return; }
+  fetch('/api/auth/verify', { headers: { 'Authorization': 'Bearer ' + token } })
+    .then(r => { if (!r.ok) { localStorage.removeItem('nocs_token'); window.location.href = '/login.html'; } })
+    .catch(() => { /* offline, lanjutkan */ });
+  window.__nocsToken = token;
+  window.__nocsUser = JSON.parse(localStorage.getItem('nocs_user') || '{}');
+})();
+</script>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — NOCS merdeka.net.id</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b27;
+  --surface2: #1c2333;
+  --border: #253047;
+  --border2: #2d3a52;
+  --text: #e2e8f4;
+  --muted: #a0aec0;
+  --muted2: #718096;
+  --accent: #3b82f6;
+  --accent-dim: rgba(59,130,246,0.12);
+  --accent-glow: rgba(59,130,246,0.30);
+  --danger: #ef4444;
+  --danger-dim: rgba(239,68,68,0.12);
+  --warn: #f59e0b;
+  --warn-dim: rgba(245,158,11,0.12);
+  --info: #06b6d4;
+  --ok: #10b981;
+  --ok-dim: rgba(16,185,129,0.12);
+  --mono: 'JetBrains Mono', monospace;
+  --sans: 'Inter', sans-serif;
+  --grid-line: rgba(59,130,246,0.03);
+}
+:root.light {
+  --bg: #f1f5f9;
+  --surface: #ffffff;
+  --surface2: #f8fafc;
+  --border: #e2e8f0;
+  --border2: #cbd5e1;
+  --text: #0f172a;
+  --muted: #334155;
+  --muted2: #64748b;
+  --accent: #2563eb;
+  --accent-dim: rgba(37,99,235,0.10);
+  --accent-glow: rgba(37,99,235,0.25);
+  --danger: #dc2626;
+  --danger-dim: rgba(220,38,38,0.10);
+  --warn: #d97706;
+  --warn-dim: rgba(217,119,6,0.10);
+  --ok: #059669;
+  --ok-dim: rgba(5,150,105,0.10);
+  --grid-line: rgba(37,99,235,0.04);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 32px 32px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── TOPBAR ── */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px;
+  height: 56px;
+  background: rgba(13,17,23,0.92);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(8px);
+}
+:root.light .topbar { background: rgba(241,245,249,0.92); }
+.topbar-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+}
+.topbar-logo .logo-dot {
+  width: 28px; height: 28px;
+  background: var(--accent);
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.5px;
+}
+.topbar-logo .logo-text {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.04em;
+}
+.topbar-logo .logo-sub {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--muted2);
+  letter-spacing: 0.08em;
+}
+.topbar-badge {
+  padding: 2px 8px;
+  background: rgba(239,68,68,0.15);
+  border: 1px solid rgba(239,68,68,0.3);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  color: var(--danger);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.topbar-spacer { flex: 1; }
+.topbar-nav { display: flex; gap: 4px; }
+.topbar-nav a {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 12px;
+  font-size: 0.77rem;
+  font-family: var(--mono);
+  color: var(--muted2);
+  text-decoration: none;
+  border-radius: 6px;
+  letter-spacing: 0.02em;
+  transition: all 0.15s;
+}
+.topbar-nav a:hover { color: var(--accent); background: var(--accent-dim); }
+.topbar-nav a.active { color: var(--accent); background: var(--accent-dim); }
+.theme-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-family: var(--mono);
+  color: var(--muted2);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.theme-btn:hover { border-color: var(--accent); color: var(--accent); }
+.logout-topbar-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 12px;
+  background: var(--danger-dim);
+  border: 1px solid rgba(239,68,68,0.3);
+  border-radius: 6px;
+  font-size: 0.77rem;
+  font-family: var(--mono);
+  color: var(--danger);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.logout-topbar-btn:hover { background: rgba(239,68,68,0.22); border-color: var(--danger); }
+
+/* ── LAYOUT ── */
+.layout { display: flex; min-height: calc(100vh - 56px); position: relative; z-index: 1; }
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: sticky;
+  top: 56px;
+  height: calc(100vh - 56px);
+  overflow-y: auto;
+  background: rgba(22,27,39,0.5);
+}
+:root.light .sidebar {
+  background: rgba(248,250,252,0.95);
+}
+.sidebar-section-title {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  color: var(--muted2);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 12px 8px 4px;
+}
+.sidebar-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid transparent;
+}
+.sidebar-item:hover { color: var(--text); background: var(--surface2); }
+.sidebar-item.active {
+  color: var(--accent);
+  background: var(--accent-dim);
+  border-color: rgba(59,130,246,0.2);
+}
+.sidebar-item svg { width: 15px; height: 15px; flex-shrink: 0; opacity: 0.7; }
+.sidebar-item.active svg { opacity: 1; }
+.sidebar-item .badge {
+  margin-left: auto;
+  padding: 1px 6px;
+  background: var(--surface2);
+  border-radius: 10px;
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  color: var(--muted2);
+}
+
+/* ── MAIN ── */
+.main { flex: 1; padding: 24px 28px; overflow-x: hidden; }
+.page { display: none; }
+.page.active { display: block; }
+
+/* ── PAGE HEADER ── */
+.page-header { margin-bottom: 24px; }
+.page-header h1 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+.page-header p {
+  font-size: 0.82rem;
+  color: var(--muted2);
+  margin-top: 4px;
+}
+
+/* ── CARDS ── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+}
+.card-header h2 {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.card-header h2 svg { width: 16px; height: 16px; color: var(--accent); flex-shrink: 0; }
+.card-body { padding: 18px; }
+
+/* ── STATS GRID ── */
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  transition: border-color 0.15s;
+}
+.stat-card:hover { border-color: var(--border2); }
+.stat-label { font-size: 0.7rem; color: var(--muted2); font-family: var(--mono); letter-spacing: 0.05em; text-transform: uppercase; }
+.stat-value { font-size: 1.6rem; font-weight: 700; font-family: var(--mono); color: var(--text); margin-top: 4px; }
+.stat-value.ok { color: var(--ok); }
+.stat-value.danger { color: var(--danger); }
+.stat-value.warn { color: var(--warn); }
+.stat-value.accent { color: var(--accent); }
+
+/* ── TABLE ── */
+.tbl-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th {
+  text-align: left;
+  padding: 9px 12px;
+  font-size: 0.68rem;
+  font-family: var(--mono);
+  color: var(--muted2);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+td {
+  padding: 9px 12px;
+  font-size: 0.8rem;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: rgba(255,255,255,0.02); }
+.mono { font-family: var(--mono); font-size: 0.75rem; }
+.muted { color: var(--muted2); }
+
+/* ── BADGES ── */
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.68rem;
+  font-family: var(--mono);
+  letter-spacing: 0.04em;
+  font-weight: 500;
+}
+.badge.ok { background: var(--ok-dim); color: var(--ok); }
+.badge.danger { background: var(--danger-dim); color: var(--danger); }
+.badge.warn { background: var(--warn-dim); color: var(--warn); }
+.badge.accent { background: var(--accent-dim); color: var(--accent); }
+.badge.muted { background: var(--surface2); color: var(--muted2); }
+.badge::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+
+/* ── BUTTONS ── */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-family: var(--sans);
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+.btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn-primary:hover { background: #2563eb; border-color: #2563eb; }
+.btn-secondary { background: var(--surface2); color: var(--text); border-color: var(--border2); }
+.btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+.btn-danger { background: var(--danger-dim); color: var(--danger); border-color: rgba(239,68,68,0.3); }
+.btn-danger:hover { background: rgba(239,68,68,0.2); }
+.btn-ok { background: var(--ok-dim); color: var(--ok); border-color: rgba(16,185,129,0.3); }
+.btn-ok:hover { background: rgba(16,185,129,0.2); }
+.btn-sm { padding: 4px 10px; font-size: 0.72rem; }
+.btn-xs { padding: 2px 8px; font-size: 0.68rem; }
+.btn-group { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* ── FORMS ── */
+.form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+.form-group { display: flex; flex-direction: column; gap: 5px; }
+.form-group label { font-size: 0.73rem; color: var(--muted); font-weight: 500; letter-spacing: 0.02em; }
+.form-group input, .form-group select, .form-group textarea {
+  padding: 8px 12px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.82rem;
+  font-family: var(--sans);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.form-group textarea { font-family: var(--mono); resize: vertical; }
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--accent); }
+.form-group input::placeholder, .form-group textarea::placeholder { color: var(--muted2); }
+.form-group.span2 { grid-column: span 2; }
+.form-hint { font-size: 0.68rem; color: var(--muted2); line-height: 1.4; }
+.form-actions { display: flex; gap: 8px; margin-top: 16px; align-items: center; }
+
+/* ── MODAL ── */
+.modal-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(4px);
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 520px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+  animation: modal-in 0.15s ease;
+}
+@keyframes modal-in { from { opacity: 0; transform: scale(0.97) translateY(8px); } to { opacity: 1; transform: none; } }
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-header h3 { font-size: 0.95rem; font-weight: 600; }
+.modal-close {
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--muted2);
+  background: transparent;
+  border: none;
+  transition: all 0.15s;
+  font-size: 1.1rem;
+}
+.modal-close:hover { background: var(--surface2); color: var(--text); }
+.modal-body { padding: 20px; }
+.modal-footer { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
+
+/* ── ALERT ── */
+.alert {
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.alert-ok { background: var(--ok-dim); border: 1px solid rgba(16,185,129,0.25); color: var(--ok); }
+.alert-danger { background: var(--danger-dim); border: 1px solid rgba(239,68,68,0.25); color: var(--danger); }
+.alert-warn { background: var(--warn-dim); border: 1px solid rgba(245,158,11,0.25); color: var(--warn); }
+.alert-info { background: var(--accent-dim); border: 1px solid rgba(59,130,246,0.25); color: var(--accent); }
+.hidden { display: none !important; }
+
+/* ── TOAST ── */
+.toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 999; display: flex; flex-direction: column; gap: 8px; }
+.toast {
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  min-width: 260px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  animation: toast-in 0.2s ease;
+  display: flex; align-items: center; gap: 8px;
+}
+@keyframes toast-in { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+.toast.ok { background: #064e3b; border: 1px solid rgba(16,185,129,0.4); color: #6ee7b7; }
+.toast.danger { background: #450a0a; border: 1px solid rgba(239,68,68,0.4); color: #fca5a5; }
+.toast.info { background: #1e3a5f; border: 1px solid rgba(59,130,246,0.4); color: #93c5fd; }
+
+/* ── SEPARATOR ── */
+.sep { height: 1px; background: var(--border); margin: 16px 0; }
+
+/* ── TAGS ── */
+.tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag {
+  padding: 2px 8px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+/* ── HISTORY FILTER ── */
+.filter-bar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  align-items: center;
+}
+.filter-bar input, .filter-bar select {
+  padding: 6px 12px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.78rem;
+  font-family: var(--sans);
+  outline: none;
+}
+.filter-bar input:focus, .filter-bar select:focus { border-color: var(--accent); }
+.filter-bar input { flex: 1; min-width: 180px; }
+.filter-count { font-size: 0.72rem; color: var(--muted2); font-family: var(--mono); margin-left: auto; }
+
+/* ── POLL LOG ── */
+.poll-row-ok td:first-child { border-left: 2px solid var(--ok); }
+.poll-row-err td:first-child { border-left: 2px solid var(--danger); }
+
+/* ── DB STATS ── */
+.db-stat { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.82rem; }
+.db-stat:last-child { border-bottom: none; }
+.db-stat .label { color: var(--muted2); font-family: var(--mono); font-size: 0.75rem; }
+.db-stat .val { font-family: var(--mono); color: var(--text); }
+
+/* ── LOADING ── */
+.spinner {
+  display: inline-block;
+  width: 16px; height: 16px;
+  border: 2px solid var(--border2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  vertical-align: middle;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-row td { text-align: center; padding: 32px; color: var(--muted2); font-size: 0.82rem; }
+
+/* ── EMPTY ── */
+.empty-state { text-align: center; padding: 40px; color: var(--muted2); }
+.empty-state p { font-size: 0.82rem; margin-top: 8px; }
+
+/* ── DANGER ZONE ── */
+.danger-zone { border: 1px solid rgba(239,68,68,0.25); border-radius: 8px; padding: 16px; background: rgba(239,68,68,0.04); }
+.danger-zone h3 { font-size: 0.82rem; color: var(--danger); margin-bottom: 8px; font-family: var(--mono); letter-spacing: 0.04em; text-transform: uppercase; }
+.danger-zone p { font-size: 0.78rem; color: var(--muted); margin-bottom: 12px; }
+
+/* ── CONFIRM DIALOG ── */
+.confirm-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(4px);
+  z-index: 300;
+  align-items: center;
+  justify-content: center;
+}
+.confirm-overlay.open { display: flex; }
+.confirm-box {
+  background: var(--surface);
+  border: 1px solid rgba(239,68,68,0.4);
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 380px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.confirm-box .icon { font-size: 2rem; margin-bottom: 12px; }
+.confirm-box h3 { font-size: 0.95rem; font-weight: 600; margin-bottom: 8px; }
+.confirm-box p { font-size: 0.8rem; color: var(--muted2); margin-bottom: 20px; }
+.confirm-box .actions { display: flex; gap: 8px; justify-content: center; }
+
+/* ── RESPONSIVE ── */
+@media (max-width: 768px) {
+  .sidebar { width: 56px; }
+  .sidebar-item span, .sidebar-section-title { display: none; }
+  .sidebar-item { justify-content: center; }
+  .main { padding: 16px; }
+  .stats-grid { grid-template-columns: 1fr 1fr; }
+  .form-grid { grid-template-columns: 1fr; }
+}
+</style>
+
+<style>
+.nocs-userbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-top: auto;
+  border-top: 1px solid var(--border, #253047);
+  font-family: var(--sans, 'Inter', sans-serif);
+  font-size: 12px;
+  color: var(--muted, #a0aec0);
+}
+.nocs-userbar .uname { color: var(--text, #e2e8f4); font-weight: 500; }
+.nocs-userbar .role-badge {
+  background: rgba(59,130,246,0.15);
+  color: #93c5fd;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.nocs-userbar .logout-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted2, #718096);
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s;
+  margin-left: auto;
+}
+.nocs-userbar .logout-btn:hover { color: #ef4444; }
+.nocs-userbar .logout-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; }
+</style>
+
+<script>
+// ─── AUTH FETCH HELPER ───
+const _origFetch = window.fetch;
+window.fetch = function(url, opts) {
+  if (typeof url === 'string' && url.startsWith('/api/') && !url.includes('/api/auth/login')) {
+    opts = opts || {};
+    opts.headers = opts.headers || {};
+    const token = localStorage.getItem('nocs_token');
+    if (token) opts.headers['Authorization'] = 'Bearer ' + token;
+    // If 401, redirect to login
+    return _origFetch(url, opts).then(res => {
+      if (res.status === 401) {
+        localStorage.removeItem('nocs_token');
+        window.location.href = '/login.html?redirect=' + encodeURIComponent(window.location.pathname);
+      }
+      return res;
+    });
+  }
+  return _origFetch(url, opts);
+};
+</script>
+</head>
+<body>
+
+
+<script>
+(function() {
+  const user = window.__nocsUser || {};
+  if (user.username) {
+    document.getElementById('nocsUsername').textContent = user.username;
+    document.getElementById('nocsRole').textContent = user.role || 'operator';
+    document.getElementById('nocsUserbar').style.display = 'flex';
+  }
+})();
+function nocsLogout() {
+  if (!confirm('Yakin ingin logout?')) return;
+  localStorage.removeItem('nocs_token');
+  localStorage.removeItem('nocs_user');
+  window.location.href = '/login.html';
+}
+</script>
+
+
+<!-- TOPBAR -->
+<header class="topbar">
+  <a href="/" class="topbar-logo">
+    <div class="logo-dot">N</div>
+    <div>
+      <div class="logo-text">NOCS</div>
+      <div class="logo-sub">merdeka.net.id</div>
+    </div>
+  </a>
+  <span class="topbar-badge">ADMIN</span>
+  <div class="topbar-spacer"></div>
+  <nav class="topbar-nav">
+    <a href="/">← Dashboard</a>
+    <a href="#" class="active">Admin</a>
+  </nav>
+  <button class="theme-btn" onclick="toggleTheme()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+    <span id="theme-label">Light</span>
+  </button>
+  <button class="logout-topbar-btn" onclick="nocsLogout()" title="Logout">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+    Logout
+  </button>
+</header>
+
+<div class="layout">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-section-title">Perangkat</div>
+    <div class="sidebar-item active" onclick="showPage('olt')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="6" y1="12" x2="6" y2="12"/><line x1="10" y1="12" x2="10" y2="12"/><line x1="14" y1="10" x2="14" y2="14"/></svg>
+      <span>OLT Config</span>
+    </div>
+    <div class="sidebar-item" onclick="showPage('mikrotik')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      <span>MikroTik</span>
+    </div>
+     <div class="sidebar-item" onclick="showPage('netbackup')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      <span>NetBackup</span>
+    </div>
+    <div class="sidebar-section-title">Data</div>
+    <div class="sidebar-item" onclick="showPage('history')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+      <span>History Aktivasi</span>
+    </div>
+    <div class="sidebar-item" onclick="showPage('polllog')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><polyline points="18 17 13 12 9 16 5 12"/></svg>
+      <span>Poll Log</span>
+    </div>
+
+    <div class="sidebar-section-title">Sistem</div>
+    <div class="sidebar-item" onclick="showPage('users')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      <span>Manajemen User</span>
+    </div>
+    <div class="sidebar-item" onclick="showPage('database')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+      <span>Database</span>
+    </div>
+    <div class="sidebar-item" onclick="showPage('about')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <span>Tentang</span>
+    </div>
+    <div class="nocs-userbar" id="nocsUserbar" style="display:none;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a0aec0" stroke-width="1.8"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      <span class="uname" id="nocsUsername"></span>
+      <span class="role-badge" id="nocsRole"></span>
+      <button class="logout-btn" onclick="nocsLogout()" title="Logout">
+        <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </button>
+    </div>
+  </aside>
+
+  <!-- MAIN CONTENT -->
+  <main class="main">
+
+    <!-- ══ PAGE: OLT ══ -->
+    <div id="page-olt" class="page active">
+      <div class="page-header">
+        <h1>Manajemen OLT</h1>
+        <p>Konfigurasi perangkat OLT ZTE yang terhubung ke sistem</p>
+      </div>
+
+      <div id="olt-alert-wrap"></div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/></svg>
+            Daftar OLT
+          </h2>
+          <button class="btn btn-primary btn-sm" onclick="openOltModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Tambah OLT
+          </button>
+        </div>
+        <div class="tbl-wrap">
+          <table id="olt-table">
+            <thead>
+              <tr>
+                <th>Nama OLT</th>
+                <th>Host / IP</th>
+                <th>Port Telnet</th>
+                <th>Username</th>
+                <th>Password</th>
+                <th>Vendor</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="olt-tbody">
+              <tr class="loading-row"><td colspan="7"><span class="spinner"></span> Memuat data...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Test Telnet -->
+      <div class="card">
+        <div class="card-header">
+          <h2>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 9l3 3-3 3"/><line x1="13" y1="15" x2="16" y2="15"/></svg>
+            Test Koneksi Telnet
+          </h2>
+        </div>
+        <div class="card-body">
+          <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
+            <div class="form-group" style="flex:1;min-width:200px;">
+              <label>Pilih OLT</label>
+              <select id="test-olt-select">
+                <option value="">— Pilih OLT —</option>
+              </select>
+            </div>
+            <button class="btn btn-secondary" id="test-telnet-btn" onclick="testTelnet()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 8 12 12 14 14"/></svg>
+              Test Koneksi
+            </button>
+          </div>
+          <div id="test-telnet-result" class="hidden" style="margin-top:12px;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ PAGE: MIKROTIK ══ -->
+    <div id="page-mikrotik" class="page">
+      <div class="page-header">
+        <h1>Manajemen MikroTik</h1>
+        <p>Konfigurasi router MikroTik untuk manajemen PPPoE</p>
+      </div>
+
+      <div id="mtk-alert-wrap"></div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            Daftar MikroTik
+          </h2>
+          <button class="btn btn-primary btn-sm" onclick="openMtkModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Tambah MikroTik
+          </button>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Nama</th>
+                <th>Host / IP</th>
+                <th>Port API</th>
+                <th>Username</th>
+                <th>Status</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="mtk-tbody">
+              <tr class="loading-row"><td colspan="6"><span class="spinner"></span> Memuat data...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    
+    <!-- ══ PAGE: NETBACKUP ══ -->
+    <div id="page-netbackup" class="page">
+      <div class="page-header">
+        <h1>Manajemen NetBackup</h1>
+        <p>Kelola perangkat backup jaringan via NetBackup (port 4001)</p>
+      </div>
+ 
+      <div id="nb-alert-wrap"></div>
+ 
+      <!-- Stats -->
+      <div class="stats-grid" id="nb-stats-grid" style="margin-bottom:20px;"></div>
+ 
+      <!-- Tabel Perangkat -->
+      <div class="card">
+        <div class="card-header">
+          <h2>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+            Daftar Perangkat Backup
+          </h2>
+          <div class="btn-group">
+            <button class="btn btn-secondary btn-sm" onclick="loadNetbackup()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.49-4.49"/></svg>
+              Refresh
+            </button>
+            <button class="btn btn-primary btn-sm" onclick="openNbModal()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Tambah Perangkat
+            </button>
+          </div>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Nama</th>
+                <th>Host / IP</th>
+                <th>Port</th>
+                <th>Username</th>
+                <th>Tipe</th>
+                <th>Schedule</th>
+                <th>Status</th>
+                <th>Backup Terakhir</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="nb-tbody">
+              <tr class="loading-row"><td colspan="9"><span class="spinner"></span> Memuat data...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+ 
+    <!-- ══ MODAL: TAMBAH/EDIT PERANGKAT NETBACKUP ══ -->
+    <div class="modal-overlay" id="nb-modal">
+      <div class="modal" style="max-width:580px;">
+        <div class="modal-header">
+          <h3 id="nb-modal-title">Tambah Perangkat Backup</h3>
+          <button class="modal-close" onclick="closeModal('nb-modal')">✕</button>
+        </div>
+        <div class="modal-body">
+          <div id="nb-modal-alert"></div>
+          <input type="hidden" id="nb-edit-id">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Nama Perangkat *</label>
+              <input type="text" id="nb-name" placeholder="SW-CORE-IDC">
+            </div>
+            <div class="form-group">
+              <label>Host / IP *</label>
+              <input type="text" id="nb-host" placeholder="192.168.1.1">
+            </div>
+            <div class="form-group">
+              <label>Port SSH</label>
+              <input type="number" id="nb-port" value="22" placeholder="22">
+            </div>
+            <div class="form-group">
+              <label>Username *</label>
+              <input type="text" id="nb-username" placeholder="admin">
+            </div>
+            <div class="form-group">
+              <label>Tipe Perangkat</label>
+              <select id="nb-devicetype">
+                <option value="ruijie">Ruijie</option>
+                <option value="huawei">Huawei</option>
+                <option value="cisco">Cisco</option>
+                <option value="mikrotik">MikroTik</option>
+                <option value="juniper">Juniper</option>
+                <option value="other">Lainnya</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Metode Auth</label>
+              <select id="nb-authtype" onchange="toggleNbAuth()">
+                <option value="password">Password</option>
+                <option value="key">SSH Key</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Schedule (Cron)</label>
+              <input type="text" id="nb-schedule" value="0 2 * * *" placeholder="0 2 * * *">
+            </div>
+          </div>
+          <div class="form-group" id="nb-auth-password">
+            <label>Password</label>
+            <input type="password" id="nb-password" placeholder="••••••••">
+          </div>
+          <div class="form-group" id="nb-auth-key" style="display:none">
+            <label>Path SSH Private Key</label>
+            <input type="text" id="nb-keypath" placeholder="/root/.ssh/id_rsa">
+          </div>
+          <div class="form-group">
+            <label>Commands (satu per baris) *</label>
+            <textarea id="nb-commands" rows="4" placeholder="terminal length 0&#10;show running-config"></textarea>
+            <div class="form-hint">💡 Untuk ruijie: tambahkan "terminal length 0" sebelum "show running-config" agar output tidak terpotong</div>
+          </div>
+          <div class="form-group" style="display:flex;align-items:center;gap:8px;">
+            <input type="checkbox" id="nb-enabled" checked style="width:16px;height:16px;cursor:pointer;">
+            <label for="nb-enabled" style="cursor:pointer;margin:0;">Aktifkan backup otomatis</label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" onclick="closeModal('nb-modal')">Batal</button>
+          <button class="btn btn-primary" onclick="submitNbDevice()">Simpan</button>
+        </div>
+      </div>
+    </div>
+    <!-- ══ PAGE: HISTORY ══ -->
+    <div id="page-history" class="page">
+      <div class="page-header">
+        <h1>History Aktivasi ONU</h1>
+        <p>Log semua aktivasi ONU yang pernah dilakukan</p>
+      </div>
+
+      <div class="stats-grid" id="history-stats-grid"></div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/></svg>
+            Log Aktivasi
+          </h2>
+          <div class="btn-group">
+            <button class="btn btn-secondary btn-sm" onclick="loadHistory()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.49-4.49"/></svg>
+              Refresh
+            </button>
+            <button class="btn btn-danger btn-sm" onclick="confirmClearHistory()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+              Hapus Semua
+            </button>
+          </div>
+        </div>
+        <div class="card-body" style="padding-bottom:0;">
+          <div class="filter-bar">
+            <input type="text" id="history-search" placeholder="Cari SN, nama, PPPoE, OLT..." oninput="filterHistory()">
+            <select id="history-filter-olt" onchange="filterHistory()">
+              <option value="">Semua OLT</option>
+            </select>
+            <select id="history-filter-status" onchange="filterHistory()">
+              <option value="">Semua Status</option>
+              <option value="ok">Sukses</option>
+              <option value="fail">Gagal</option>
+            </select>
+            <span class="filter-count" id="history-count">0 record</span>
+          </div>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Waktu</th>
+                <th>OLT</th>
+                <th>Slot/Port/ONU</th>
+                <th>Serial Number</th>
+                <th>Nama Pelanggan</th>
+                <th>PPPoE ID</th>
+                <th>RX Power</th>
+                <th>Status</th>
+                <th>Elapsed</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="history-tbody">
+              <tr class="loading-row"><td colspan="10"><span class="spinner"></span> Memuat...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ PAGE: POLL LOG ══ -->
+    <div id="page-polllog" class="page">
+      <div class="page-header">
+        <h1>Poll Log SNMP</h1>
+        <p>Riwayat polling SNMP ke semua OLT</p>
+      </div>
+
+      <div class="stats-grid" id="polllog-stats"></div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><polyline points="18 17 13 12 9 16 5 12"/></svg>
+            Log Poll Terbaru
+          </h2>
+          <div class="btn-group">
+            <select id="polllog-filter-olt" onchange="filterPollLog()" style="padding:5px 10px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-size:0.78rem;">
+              <option value="">Semua OLT</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" onclick="loadPollLog()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.49-4.49"/></svg>
+              Refresh
+            </button>
+          </div>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Waktu Poll</th>
+                <th>OLT</th>
+                <th>Total ONU</th>
+                <th>Online</th>
+                <th>Offline</th>
+                <th>Durasi</th>
+                <th>Status</th>
+                <th>Keterangan</th>
+              </tr>
+            </thead>
+            <tbody id="polllog-tbody">
+              <tr class="loading-row"><td colspan="8"><span class="spinner"></span> Memuat...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ PAGE: DATABASE ══ -->
+    <div id="page-database" class="page">
+      <div class="page-header">
+        <h1>Manajemen Database</h1>
+        <p>Statistik dan pemeliharaan database SQLite</p>
+      </div>
+
+      <div class="stats-grid" id="db-stats-grid"></div>
+
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
+          <h2>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+            Statistik Tabel
+          </h2>
+          <button class="btn btn-secondary btn-sm" onclick="loadDbStats()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.49-4.49"/></svg>
+            Refresh
+          </button>
+        </div>
+        <div class="card-body" id="db-table-stats">
+          <div style="color:var(--muted2);font-size:0.82rem;"><span class="spinner"></span> Memuat...</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            Danger Zone
+          </h2>
+        </div>
+        <div class="card-body">
+          <div class="danger-zone" style="margin-bottom:12px;">
+            <h3>⚠ Hapus History Aktivasi</h3>
+            <p>Menghapus semua record history aktivasi ONU. Aksi ini tidak dapat dibatalkan.</p>
+            <button class="btn btn-danger btn-sm" onclick="confirmClearHistory()">Hapus History</button>
+          </div>
+          <div class="danger-zone">
+            <h3>⚠ Hapus Cache ONU</h3>
+            <p>Menghapus semua cache monitoring ONU dari database. Cache akan diisi ulang saat polling berikutnya.</p>
+            <button class="btn btn-danger btn-sm" onclick="confirmClearCache()">Hapus Cache ONU</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ PAGE: ABOUT ══ -->
+    <div id="page-about" class="page">
+      <div class="page-header">
+        <h1>Tentang Sistem</h1>
+        <p>Informasi versi dan konfigurasi NOCS</p>
+      </div>
+      <div class="card">
+        <div class="card-body">
+          <div class="db-stat"><span class="label">APLIKASI</span><span class="val">NOCS — Network Operations Control System</span></div>
+          <div class="db-stat"><span class="label">OPERATOR</span><span class="val">merdeka.net.id</span></div>
+          <div class="db-stat"><span class="label">BACKEND</span><span class="val">Node.js / Express</span></div>
+          <div class="db-stat"><span class="label">DATABASE</span><span class="val">SQLite (better-sqlite3)</span></div>
+          <div class="db-stat"><span class="label">PROTOKOL OLT</span><span class="val">Telnet + SNMP v2c (ZTE GPON C300/C320)</span></div>
+          <div class="db-stat"><span class="label">PROTOKOL MIKROTIK</span><span class="val">RouterOS API Port 8728</span></div>
+          <div class="db-stat"><span class="label">NOTIFIKASI</span><span class="val">Telegram Bot</span></div>
+          <div class="db-stat"><span class="label">ADMIN PAGE</span><span class="val">admin.html — v1.0</span></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px;">
+        <div class="card-header"><h2>API Endpoints</h2></div>
+        <div class="card-body">
+          <div class="tag-list" id="api-endpoints-list"></div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ══ PAGE: USERS ══ -->
+    <div id="page-users" class="page">
+      <div class="page-header">
+        <h1>Manajemen User</h1>
+        <p>Kelola akun pengguna yang dapat mengakses sistem NOCS</p>
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-primary" onclick="openUserModal()">+ Tambah User</button>
+          <button class="btn btn-secondary" onclick="openChangePwModal()">🔑 Ganti Password Saya</button>
+        </div>
+      </div>
+
+      <div id="user-alert-wrap"></div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>Daftar User</h2>
+          <button class="btn btn-secondary btn-sm" onclick="loadUsers()">↺ Refresh</button>
+        </div>
+        <div class="card-body" style="padding:0">
+          <table id="user-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Username</th>
+                <th>Role</th>
+                <th>Dibuat</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="user-tbody">
+              <tr><td colspan="5" style="text-align:center;color:var(--muted2);padding:24px">Memuat...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </main><!-- /main -->
+</div><!-- /layout -->
+
+<!-- ── MODAL: OLT ── -->
+<div class="modal-overlay" id="olt-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="olt-modal-title">Tambah OLT</h3>
+      <button class="modal-close" onclick="closeModal('olt-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="olt-modal-alert"></div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Nama OLT *</label>
+          <input type="text" id="olt-name" placeholder="OLT-C320-NAMA" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label>Host / IP *</label>
+          <input type="text" id="olt-host" placeholder="10.136.x.x" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label>Port Telnet</label>
+          <input type="number" id="olt-port" placeholder="23" value="23">
+        </div>
+        <div class="form-group">
+          <label>Username</label>
+          <input type="text" id="olt-username" placeholder="zte" value="zte">
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="text" id="olt-password" placeholder="zte" value="zte">
+        </div>
+        <div class="form-group">
+          <label>Vendor ID *</label>
+          <select id="olt-vendor">
+            <option value="OLT1">OLT1 — VLAN 601</option>
+            <option value="OLT2">OLT2 — VLAN 602</option>
+            <option value="OLT3">OLT3 — VLAN 600</option>
+            <option value="OLT4">OLT4 — VLAN 603 / 500M</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('olt-modal')">Batal</button>
+      <button class="btn btn-primary" id="olt-modal-submit" onclick="submitOlt()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+        Simpan
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL: MIKROTIK ── -->
+<div class="modal-overlay" id="mtk-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="mtk-modal-title">Tambah MikroTik</h3>
+      <button class="modal-close" onclick="closeModal('mtk-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="mtk-modal-alert"></div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Nama *</label>
+          <input type="text" id="mtk-name" placeholder="MTK-CORE-01" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label>Host / IP *</label>
+          <input type="text" id="mtk-host" placeholder="192.168.1.1" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label>Port API</label>
+          <input type="number" id="mtk-port" placeholder="8728" value="8728">
+        </div>
+        <div class="form-group">
+          <label>Username *</label>
+          <input type="text" id="mtk-username" placeholder="admin" autocomplete="off">
+        </div>
+        <div class="form-group span2">
+          <label>Password *</label>
+          <input type="password" id="mtk-password" placeholder="••••••••" autocomplete="off">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('mtk-modal')">Batal</button>
+      <button class="btn btn-primary" id="mtk-modal-submit" onclick="submitMtk()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+        Simpan
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── CONFIRM DIALOG ── -->
+<div class="confirm-overlay" id="confirm-overlay">
+  <div class="confirm-box">
+    <div class="icon" id="confirm-icon">⚠️</div>
+    <h3 id="confirm-title">Konfirmasi</h3>
+    <p id="confirm-msg">Apakah Anda yakin?</p>
+    <div class="actions">
+      <button class="btn btn-secondary" onclick="closeConfirm()">Batal</button>
+      <button class="btn btn-danger" id="confirm-ok-btn">Ya, Lanjutkan</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ── MODAL: TAMBAH USER ── -->
+<div class="modal-overlay" id="user-modal" onclick="if(event.target===this)closeModal('user-modal')">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Tambah User Baru</h3>
+      <button class="modal-close" onclick="closeModal('user-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="user-modal-alert"></div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Username *</label>
+          <input type="text" id="new-username" placeholder="contoh: operator1" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label>Password *</label>
+          <input type="password" id="new-password" placeholder="Minimal 6 karakter" autocomplete="new-password">
+        </div>
+        <div class="form-group">
+          <label>Role</label>
+          <select id="new-role">
+            <option value="operator">Operator</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('user-modal')">Batal</button>
+      <button class="btn btn-primary" onclick="submitAddUser()">Tambah User</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL: GANTI PASSWORD ── -->
+<div class="modal-overlay" id="changepw-modal" onclick="if(event.target===this)closeModal('changepw-modal')">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Ganti Password</h3>
+      <button class="modal-close" onclick="closeModal('changepw-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="changepw-alert"></div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Password Lama *</label>
+          <input type="password" id="old-password" placeholder="Password saat ini" autocomplete="current-password">
+        </div>
+        <div class="form-group">
+          <label>Password Baru *</label>
+          <input type="password" id="new-password2" placeholder="Minimal 6 karakter" autocomplete="new-password">
+        </div>
+        <div class="form-group">
+          <label>Konfirmasi Password Baru *</label>
+          <input type="password" id="confirm-password" placeholder="Ulangi password baru" autocomplete="new-password">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('changepw-modal')">Batal</button>
+      <button class="btn btn-primary" onclick="submitChangePw()">Simpan Password</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── TOAST CONTAINER ── -->
+<div class="toast-container" id="toast-container"></div>
+
+<script>
+// ─── STATE ───
+let oltList = [];
+let mtkList = [];
+let historyData = [];
+let pollLogData = [];
+let oltModalMode = 'add'; // 'add' | 'edit'
+let mtkModalMode = 'add';
+let editOltName = null;
+let editMtkName = null;
+
+// ─── THEME ───
+function toggleTheme() {
+  const isLight = document.documentElement.classList.toggle('light');
+  document.getElementById('theme-label').textContent = isLight ? 'Dark' : 'Light';
+  localStorage.setItem('theme', isLight ? 'light' : 'dark');
+}
+(function initTheme() {
+  const saved = localStorage.getItem('theme');
+  if (saved === 'light') {
+    document.documentElement.classList.add('light');
+    document.getElementById('theme-label').textContent = 'Dark';
+  }
+})();
+
+// ─── NAVIGATION ───
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  const items = document.querySelectorAll('.sidebar-item');
+  items.forEach(i => {
+    if (i.getAttribute('onclick') && i.getAttribute('onclick').includes("'" + name + "'")) {
+      i.classList.add('active');
+    }
+  });
+  // Lazy load
+  if (name === 'olt') loadOlt();
+  if (name === 'mikrotik') loadMtk();
+  if (name === 'history') loadHistory();
+  if (name === 'polllog') loadPollLog();
+  if (name === 'database') loadDbStats();
+  if (name === 'about') renderApiEndpoints();
+  if (name === 'users') loadUsers();
+}
+
+// ─── TOAST ───
+function toast(msg, type = 'info') {
+  const c = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.innerHTML = (type === 'ok' ? '✓ ' : type === 'danger' ? '✕ ' : 'ℹ ') + msg;
+  c.appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+// ─── MODAL ───
+function closeModal(id) {
+  const el = document.getElementById(id);
+  el.classList.remove('open');
+  el.style.display = '';
+}
+function openModal(id) {
+  const el = document.getElementById(id);
+  el.classList.add('open');
+  el.style.display = 'flex';
+}
+
+// ─── CONFIRM ───
+let confirmCallback = null;
+function openConfirm(icon, title, msg, onOk) {
+  document.getElementById('confirm-icon').textContent = icon;
+  document.getElementById('confirm-title').textContent = title;
+  document.getElementById('confirm-msg').textContent = msg;
+  confirmCallback = onOk;
+  document.getElementById('confirm-ok-btn').onclick = () => { closeConfirm(); onOk(); };
+  document.getElementById('confirm-overlay').classList.add('open');
+}
+function closeConfirm() {
+  document.getElementById('confirm-overlay').classList.remove('open');
+}
+
+// ─── ALERT IN PAGE ───
+function setAlert(wrapId, msg, type) {
+  const el = document.getElementById(wrapId);
+  if (!msg) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
+}
+function setModalAlert(id, msg, type) {
+  const el = document.getElementById(id);
+  if (!msg) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="alert alert-${type}" style="margin-bottom:12px;">${msg}</div>`;
+}
+
+// ─── API HELPERS ───
+async function apiFetch(url, opts = {}) {
+  const r = await fetch(url, {
+    headers: { 'Content-Type': 'application/json', ...opts.headers },
+    ...opts,
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  return r.json();
+}
+
+// ══════════════════════════════
+// ─── OLT ───
+// ══════════════════════════════
+async function loadOlt() {
+  const tbody = document.getElementById('olt-tbody');
+  tbody.innerHTML = '<tr class="loading-row"><td colspan="7"><span class="spinner"></span> Memuat...</td></tr>';
+  try {
+    const data = await apiFetch('/api/admin/olts');
+    oltList = Array.isArray(data) ? data : [];
+    renderOltTable();
+    populateOltSelects();
+    setAlert('olt-alert-wrap', '', 'ok');
+  } catch(e) {
+    tbody.innerHTML = `<tr class="loading-row"><td colspan="7" style="color:var(--danger);">Gagal memuat data OLT: ${e.message}</td></tr>`;
+  }
+}
+
+function renderOltTable() {
+  const tbody = document.getElementById('olt-tbody');
+  if (!oltList.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted2);padding:32px;">Belum ada OLT yang dikonfigurasi</td></tr>';
+    return;
+  }
+  tbody.innerHTML = oltList.map(o => `
+    <tr>
+      <td><span class="mono" style="color:var(--accent);">${esc(o.name)}</span></td>
+      <td><span class="mono">${esc(o.host)}</span></td>
+      <td><span class="mono">${o.port}</span></td>
+      <td><span class="mono">${esc(o.username)}</span></td>
+      <td><span class="mono" style="color:var(--muted2);">••••••</span></td>
+      <td><span class="badge accent">${esc(o.vendor)}</span></td>
+      <td>
+        <div class="btn-group">
+          <button class="btn btn-secondary btn-xs" onclick="editOlt('${esc(o.name)}')">Edit</button>
+          <button class="btn btn-danger btn-xs" onclick="deleteOlt('${esc(o.name)}')">Hapus</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function populateOltSelects() {
+  const selects = ['test-olt-select', 'history-filter-olt', 'polllog-filter-olt'];
+  selects.forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const val = sel.value;
+    const isFilter = id.includes('filter');
+    sel.innerHTML = `<option value="">${isFilter ? 'Semua OLT' : '— Pilih OLT —'}</option>` +
+      oltList.map(o => `<option value="${esc(o.name)}" ${val === o.name ? 'selected' : ''}>${esc(o.name)}</option>`).join('');
+  });
+}
+
+function openOltModal(mode = 'add', data = null) {
+  oltModalMode = mode;
+  editOltName = data?.name || null;
+  setModalAlert('olt-modal-alert', '', '');
+  document.getElementById('olt-modal-title').textContent = mode === 'edit' ? 'Edit OLT' : 'Tambah OLT';
+  document.getElementById('olt-modal-submit').textContent = mode === 'edit' ? ' Simpan Perubahan' : ' Simpan';
+
+  if (mode === 'edit' && data) {
+    document.getElementById('olt-name').value = data.name;
+    document.getElementById('olt-name').readOnly = true;
+    document.getElementById('olt-host').value = data.host;
+    document.getElementById('olt-port').value = data.port;
+    document.getElementById('olt-username').value = data.username;
+    document.getElementById('olt-password').value = data.password;
+    document.getElementById('olt-vendor').value = data.vendor;
+  } else {
+    document.getElementById('olt-name').value = '';
+    document.getElementById('olt-name').readOnly = false;
+    document.getElementById('olt-host').value = '';
+    document.getElementById('olt-port').value = '23';
+    document.getElementById('olt-username').value = 'zte';
+    document.getElementById('olt-password').value = 'zte';
+    document.getElementById('olt-vendor').value = 'OLT1';
+  }
+  openModal('olt-modal');
+}
+
+function editOlt(name) {
+  const o = oltList.find(x => x.name === name);
+  if (!o) return;
+  openOltModal('edit', o);
+}
+
+async function submitOlt() {
+  const name = document.getElementById('olt-name').value.trim();
+  const host = document.getElementById('olt-host').value.trim();
+  const port = document.getElementById('olt-port').value;
+  const username = document.getElementById('olt-username').value.trim();
+  const password = document.getElementById('olt-password').value.trim();
+  const vendor = document.getElementById('olt-vendor').value;
+
+  if (!name || !host || !vendor) {
+    setModalAlert('olt-modal-alert', 'Nama, Host, dan Vendor wajib diisi.', 'danger');
+    return;
+  }
+
+  const btn = document.getElementById('olt-modal-submit');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Menyimpan...';
+
+  try {
+    const method = oltModalMode === 'edit' ? 'PUT' : 'POST';
+    const res = await apiFetch('/api/admin/olt', {
+      method,
+      body: { name, host, port: parseInt(port) || 23, username, password, vendor }
+    });
+    if (res.success) {
+      toast(res.message || 'OLT berhasil disimpan', 'ok');
+      closeModal('olt-modal');
+      loadOlt();
+    } else {
+      setModalAlert('olt-modal-alert', res.message || 'Gagal menyimpan OLT', 'danger');
+    }
+  } catch(e) {
+    setModalAlert('olt-modal-alert', e.message, 'danger');
+  } finally {
+    btn.disabled = false; btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Simpan';
+  }
+}
+
+function deleteOlt(name) {
+  openConfirm('🗑️', 'Hapus OLT', `Hapus OLT "${name}"? Aksi ini tidak dapat dibatalkan.`, async () => {
+    try {
+      const res = await apiFetch(`/api/admin/olt/${encodeURIComponent(name)}`, { method: 'DELETE' });
+      if (res.success) { toast(res.message, 'ok'); loadOlt(); }
+      else toast(res.message || 'Gagal menghapus', 'danger');
+    } catch(e) { toast(e.message, 'danger'); }
+  });
+}
+
+async function testTelnet() {
+  const oltName = document.getElementById('test-olt-select').value;
+  if (!oltName) { toast('Pilih OLT terlebih dahulu', 'info'); return; }
+  const btn = document.getElementById('test-telnet-btn');
+  const res_el = document.getElementById('test-telnet-result');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Testing...';
+  res_el.className = 'alert alert-info';
+  res_el.textContent = `Menghubungkan ke ${oltName}...`;
+  res_el.classList.remove('hidden');
+  try {
+    const res = await apiFetch('/api/test-ssh', { method: 'POST', body: { oltName } });
+    res_el.className = res.success ? 'alert alert-ok' : 'alert alert-danger';
+    res_el.textContent = res.message;
+  } catch(e) {
+    res_el.className = 'alert alert-danger';
+    res_el.textContent = 'Error: ' + e.message;
+  } finally {
+    btn.disabled = false; btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 8 12 12 14 14"/></svg> Test Koneksi';
+  }
+}
+
+// ══════════════════════════════
+// ─── MIKROTIK ───
+// ══════════════════════════════
+async function loadMtk() {
+  const tbody = document.getElementById('mtk-tbody');
+  tbody.innerHTML = '<tr class="loading-row"><td colspan="6"><span class="spinner"></span> Memuat...</td></tr>';
+  try {
+    const data = await apiFetch('/api/admin/mikrotik');
+    mtkList = Array.isArray(data) ? data : [];
+    renderMtkTable();
+    setAlert('mtk-alert-wrap', '', '');
+  } catch(e) {
+    tbody.innerHTML = `<tr class="loading-row"><td colspan="6" style="color:var(--danger);">Gagal: ${e.message}</td></tr>`;
+  }
+}
+
+function renderMtkTable() {
+  const tbody = document.getElementById('mtk-tbody');
+  if (!mtkList.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted2);padding:32px;">Belum ada MikroTik yang dikonfigurasi</td></tr>';
+    return;
+  }
+  tbody.innerHTML = mtkList.map(m => `
+    <tr>
+      <td><span class="mono" style="color:var(--accent);">${esc(m.name)}</span></td>
+      <td><span class="mono">${esc(m.host)}</span></td>
+      <td><span class="mono">${m.port || 8728}</span></td>
+      <td><span class="mono">${esc(m.username)}</span></td>
+      <td><span class="badge muted" id="mtk-status-${esc(m.name)}">—</span></td>
+      <td>
+        <div class="btn-group">
+          <button class="btn btn-secondary btn-xs" onclick="testMtk('${esc(m.name)}')">Test</button>
+          <button class="btn btn-secondary btn-xs" onclick="editMtk('${esc(m.name)}')">Edit</button>
+          <button class="btn btn-danger btn-xs" onclick="deleteMtk('${esc(m.name)}')">Hapus</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function openMtkModal(mode = 'add', data = null) {
+  mtkModalMode = mode;
+  editMtkName = data?.name || null;
+  setModalAlert('mtk-modal-alert', '', '');
+  document.getElementById('mtk-modal-title').textContent = mode === 'edit' ? 'Edit MikroTik' : 'Tambah MikroTik';
+  if (mode === 'edit' && data) {
+    document.getElementById('mtk-name').value = data.name;
+    document.getElementById('mtk-name').readOnly = true;
+    document.getElementById('mtk-host').value = data.host;
+    document.getElementById('mtk-port').value = data.port || 8728;
+    document.getElementById('mtk-username').value = data.username;
+    document.getElementById('mtk-password').value = '';
+  } else {
+    ['mtk-name','mtk-host','mtk-username','mtk-password'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('mtk-name').readOnly = false;
+    document.getElementById('mtk-port').value = '8728';
+  }
+  openModal('mtk-modal');
+}
+
+function editMtk(name) {
+  const m = mtkList.find(x => x.name === name);
+  if (!m) return;
+  openMtkModal('edit', m);
+}
+
+async function submitMtk() {
+  const name = document.getElementById('mtk-name').value.trim();
+  const host = document.getElementById('mtk-host').value.trim();
+  const port = document.getElementById('mtk-port').value;
+  const username = document.getElementById('mtk-username').value.trim();
+  const password = document.getElementById('mtk-password').value.trim();
+
+  if (!name || !host || !username || (!password && mtkModalMode === 'add')) {
+    setModalAlert('mtk-modal-alert', 'Semua field wajib diisi.', 'danger');
+    return;
+  }
+
+  const btn = document.getElementById('mtk-modal-submit');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Menyimpan...';
+  try {
+    const method = mtkModalMode === 'edit' ? 'PUT' : 'POST';
+    const body = { name, host, port: parseInt(port) || 8728, username };
+    if (password) body.password = password;
+    const res = await apiFetch('/api/admin/mikrotik', { method, body });
+    if (res.success) {
+      toast(res.message || 'MikroTik berhasil disimpan', 'ok');
+      closeModal('mtk-modal');
+      loadMtk();
+    } else {
+      setModalAlert('mtk-modal-alert', res.message || 'Gagal menyimpan', 'danger');
+    }
+  } catch(e) {
+    setModalAlert('mtk-modal-alert', e.message, 'danger');
+  } finally {
+    btn.disabled = false; btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Simpan';
+  }
+}
+
+async function testMtk(name) {
+  const badge = document.getElementById('mtk-status-' + name);
+  if (badge) { badge.className = 'badge accent'; badge.textContent = 'Testing...'; }
+  try {
+    const res = await apiFetch('/api/mikrotik/test', { method: 'POST', body: { mikrotikName: name } });
+    if (badge) {
+      badge.className = res.success ? 'badge ok' : 'badge danger';
+      badge.textContent = res.success ? 'Online' : 'Gagal';
+    }
+    toast(res.message, res.success ? 'ok' : 'danger');
+  } catch(e) {
+    if (badge) { badge.className = 'badge danger'; badge.textContent = 'Error'; }
+    toast(e.message, 'danger');
+  }
+}
+
+function deleteMtk(name) {
+  openConfirm('🗑️', 'Hapus MikroTik', `Hapus MikroTik "${name}"?`, async () => {
+    try {
+      const res = await apiFetch(`/api/admin/mikrotik/${encodeURIComponent(name)}`, { method: 'DELETE' });
+      if (res.success) { toast(res.message, 'ok'); loadMtk(); }
+      else toast(res.message, 'danger');
+    } catch(e) { toast(e.message, 'danger'); }
+  });
+}
+
+// ══════════════════════════════
+// ─── HISTORY ───
+// ══════════════════════════════
+async function loadHistory() {
+  document.getElementById('history-tbody').innerHTML =
+    '<tr class="loading-row"><td colspan="10"><span class="spinner"></span> Memuat...</td></tr>';
+  try {
+    const res = await apiFetch('/api/history');
+    historyData = res.history || [];
+    renderHistoryStats();
+    filterHistory();
+  } catch(e) {
+    document.getElementById('history-tbody').innerHTML =
+      `<tr class="loading-row"><td colspan="10" style="color:var(--danger);">Gagal: ${e.message}</td></tr>`;
+  }
+}
+
+function renderHistoryStats() {
+  const total = historyData.length;
+  const ok = historyData.filter(h => h.success).length;
+  const pushed = historyData.filter(h => h.pushed).length;
+  const olts = [...new Set(historyData.map(h => h.oltName))].length;
+  document.getElementById('history-stats-grid').innerHTML = `
+    <div class="stat-card"><div class="stat-label">Total Aktivasi</div><div class="stat-value accent">${total}</div></div>
+    <div class="stat-card"><div class="stat-label">Sukses</div><div class="stat-value ok">${ok}</div></div>
+    <div class="stat-card"><div class="stat-label">Gagal</div><div class="stat-value ${total-ok > 0 ? 'danger' : 'muted'}">${total-ok}</div></div>
+    <div class="stat-card"><div class="stat-label">Pushed ke OLT</div><div class="stat-value">${pushed}</div></div>
+    <div class="stat-card"><div class="stat-label">OLT Terlibat</div><div class="stat-value">${olts}</div></div>
+  `;
+}
+
+function filterHistory() {
+  const q = document.getElementById('history-search').value.toLowerCase();
+  const filterOlt = document.getElementById('history-filter-olt').value;
+  const filterStatus = document.getElementById('history-filter-status').value;
+
+  const filtered = historyData.filter(h => {
+    const matchQ = !q || [h.sn, h.namaPelanggan, h.idPppoe, h.oltName, h.lokasi].some(v => (v||'').toLowerCase().includes(q));
+    const matchOlt = !filterOlt || h.oltName === filterOlt;
+    const matchStatus = !filterStatus || (filterStatus === 'ok' ? h.success : !h.success);
+    return matchQ && matchOlt && matchStatus;
+  });
+
+  document.getElementById('history-count').textContent = `${filtered.length} / ${historyData.length} record`;
+
+  const tbody = document.getElementById('history-tbody');
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--muted2);padding:32px;">Tidak ada data</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(h => {
+    const ts = h.ts ? new Date(h.ts).toLocaleString('id-ID') : '—';
+    const rxVal = h.rxPower ? parseFloat(h.rxPower) : null;
+    const rxColor = rxVal === null ? 'var(--muted2)' : rxVal >= -27 ? 'var(--ok)' : rxVal >= -30 ? 'var(--warn)' : 'var(--danger)';
+    return `
+    <tr>
+      <td class="mono" style="font-size:0.72rem;white-space:nowrap;">${ts}</td>
+      <td><span class="badge accent">${esc(h.oltName||'—')}</span></td>
+      <td class="mono">${esc(h.slot||'')}/${esc(h.port||'')}:${esc(h.onuId||'')}</td>
+      <td class="mono">${esc(h.sn||'—')}</td>
+      <td>${esc(h.namaPelanggan||'—')}</td>
+      <td class="mono">${esc(h.idPppoe||'—')}</td>
+      <td class="mono" style="color:${rxColor};">${h.rxPower ? h.rxPower + ' dBm' : '—'}</td>
+      <td><span class="badge ${h.success ? 'ok' : 'danger'}">${h.success ? 'Sukses' : 'Gagal'}</span>${h.pushed ? ' <span class="badge accent" style="margin-left:2px;">pushed</span>' : ''}</td>
+      <td class="mono" style="color:var(--muted2);">${h.elapsed||'—'}</td>
+      <td>
+        <button class="btn btn-danger btn-xs" onclick="deleteHistory('${h.id}')">Hapus</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function deleteHistory(id) {
+  try {
+    const res = await apiFetch(`/api/history/${id}`, { method: 'DELETE' });
+    if (res.success) {
+      historyData = historyData.filter(h => h.id !== id);
+      renderHistoryStats();
+      filterHistory();
+      toast('Record dihapus', 'ok');
+    } else toast(res.message, 'danger');
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+function confirmClearHistory() {
+  openConfirm('🗑️', 'Hapus Semua History', 'Menghapus semua history aktivasi ONU. Aksi ini tidak dapat dibatalkan!', async () => {
+    try {
+      const res = await apiFetch('/api/history', { method: 'DELETE' });
+      if (res.success) {
+        historyData = [];
+        renderHistoryStats();
+        filterHistory();
+        toast('Semua history dihapus', 'ok');
+      } else toast(res.message, 'danger');
+    } catch(e) { toast(e.message, 'danger'); }
+  });
+}
+
+// ══════════════════════════════
+// ─── POLL LOG ───
+// ══════════════════════════════
+async function loadPollLog() {
+  document.getElementById('polllog-tbody').innerHTML =
+    '<tr class="loading-row"><td colspan="8"><span class="spinner"></span> Memuat...</td></tr>';
+  try {
+    const res = await apiFetch('/api/poll-log?limit=200');
+    pollLogData = Array.isArray(res) ? res : (res.logs || []);
+    renderPollStats();
+    filterPollLog();
+    // populate filter
+    if (oltList.length === 0) {
+      await apiFetch('/api/admin/olts').then(d => { oltList = d || []; populateOltSelects(); });
+    }
+  } catch(e) {
+    document.getElementById('polllog-tbody').innerHTML =
+      `<tr class="loading-row"><td colspan="8" style="color:var(--danger);">Gagal: ${e.message}. Endpoint /api/poll-log mungkin belum ada.</td></tr>`;
+    renderPollStatsEmpty();
+  }
+}
+
+function renderPollStats() {
+  const total = pollLogData.length;
+  const ok = pollLogData.filter(p => p.success === 1 || p.success === true).length;
+  const avgDur = total ? Math.round(pollLogData.reduce((a,p) => a + (p.duration_ms||0), 0) / total) : 0;
+  const totalOnu = pollLogData.reduce((a,p) => Math.max(a, p.onu_count||0), 0);
+  document.getElementById('polllog-stats').innerHTML = `
+    <div class="stat-card"><div class="stat-label">Total Poll</div><div class="stat-value accent">${total}</div></div>
+    <div class="stat-card"><div class="stat-label">Sukses</div><div class="stat-value ok">${ok}</div></div>
+    <div class="stat-card"><div class="stat-label">Gagal</div><div class="stat-value ${total-ok > 0 ? 'danger' : 'muted'}">${total-ok}</div></div>
+    <div class="stat-card"><div class="stat-label">Avg Durasi</div><div class="stat-value">${avgDur}ms</div></div>
+    <div class="stat-card"><div class="stat-label">Max ONU Terpoll</div><div class="stat-value">${totalOnu}</div></div>
+  `;
+}
+
+function renderPollStatsEmpty() {
+  document.getElementById('polllog-stats').innerHTML = `
+    <div class="stat-card"><div class="stat-label">Total Poll</div><div class="stat-value muted">—</div></div>
+    <div class="stat-card"><div class="stat-label">Sukses</div><div class="stat-value muted">—</div></div>
+  `;
+}
+
+function filterPollLog() {
+  const filterOlt = document.getElementById('polllog-filter-olt').value;
+  const filtered = filterOlt ? pollLogData.filter(p => p.olt_name === filterOlt) : pollLogData;
+  const tbody = document.getElementById('polllog-tbody');
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted2);padding:32px;">Belum ada data poll log</td></tr>';
+    return;
+  }
+  tbody.innerHTML = filtered.slice(0, 100).map(p => {
+    const ok = p.success === 1 || p.success === true;
+    const offline = (p.onu_count||0) - (p.online_count||0);
+    return `
+    <tr class="${ok ? 'poll-row-ok' : 'poll-row-err'}">
+      <td class="mono" style="font-size:0.72rem;white-space:nowrap;">${esc(p.polled_at||'—')}</td>
+      <td><span class="badge accent">${esc(p.olt_name||'—')}</span></td>
+      <td class="mono">${p.onu_count||0}</td>
+      <td class="mono" style="color:var(--ok);">${p.online_count||0}</td>
+      <td class="mono" style="color:${offline > 0 ? 'var(--danger)' : 'var(--muted2)'};">${offline}</td>
+      <td class="mono">${p.duration_ms ? p.duration_ms + 'ms' : '—'}</td>
+      <td><span class="badge ${ok ? 'ok' : 'danger'}">${ok ? 'OK' : 'Error'}</span></td>
+      <td style="font-size:0.75rem;color:var(--muted2);">${p.error_msg ? esc(p.error_msg).substring(0,60) : '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ══════════════════════════════
+// ─── DATABASE STATS ───
+// ══════════════════════════════
+async function loadDbStats() {
+  document.getElementById('db-table-stats').innerHTML = '<div style="color:var(--muted2);font-size:0.82rem;"><span class="spinner"></span> Memuat...</div>';
+  try {
+    const res = await apiFetch('/api/db-stats');
+    const stats = res.tables || res;
+    let html = '';
+    if (Array.isArray(stats)) {
+      html = stats.map(t => `
+        <div class="db-stat">
+          <span class="label">${esc(t.name||t.table_name)}</span>
+          <span class="val">${(t.count||t.row_count||0).toLocaleString()} rows</span>
+        </div>`).join('');
+    } else {
+      // fallback: tampilkan summary dari history dan onu_cache
+      html = '<div class="alert alert-info">Endpoint /api/db-stats belum tersedia. Tambahkan ke server.js untuk melihat statistik detail.</div>';
+    }
+    document.getElementById('db-table-stats').innerHTML = html || '<div style="color:var(--muted2);">Tidak ada data</div>';
+
+    // Stat cards
+    document.getElementById('db-stats-grid').innerHTML = `
+      <div class="stat-card"><div class="stat-label">Database</div><div class="stat-value" style="font-size:1rem;word-break:break-all;">history.db</div></div>
+      <div class="stat-card"><div class="stat-label">Engine</div><div class="stat-value" style="font-size:1rem;">SQLite 3</div></div>
+    `;
+  } catch(e) {
+    document.getElementById('db-table-stats').innerHTML = `
+      <div class="alert alert-warn">Endpoint <code>/api/db-stats</code> belum tersedia di server.<br>
+      Tambahkan endpoint berikut ke <code>server.js</code>:<br><br>
+      <code style="font-family:var(--mono);font-size:0.75rem;display:block;margin-top:8px;">app.get('/api/db-stats', (req, res) => {<br>&nbsp;&nbsp;const tables = ['history','onu_cache','poll_log'].map(t => ({<br>&nbsp;&nbsp;&nbsp;&nbsp;name: t, count: db.prepare('SELECT COUNT(*) as c FROM ' + t).get().c<br>&nbsp;&nbsp;}));<br>&nbsp;&nbsp;res.json({ tables });<br>});</code></div>`;
+    document.getElementById('db-stats-grid').innerHTML = '';
+  }
+}
+
+function confirmClearCache() {
+  openConfirm('🗑️', 'Hapus Cache ONU', 'Hapus semua cache ONU dari database? Cache akan diisi ulang saat polling berikutnya.', async () => {
+    try {
+      const res = await apiFetch('/api/onu-cache/clear', { method: 'DELETE' });
+      if (res.success) toast('Cache ONU dihapus', 'ok');
+      else toast(res.message || 'Endpoint belum tersedia', 'danger');
+    } catch(e) { toast('Endpoint /api/onu-cache/clear belum tersedia', 'danger'); }
+  });
+}
+
+// ══════════════════════════════
+// ─── ABOUT / API ENDPOINTS ───
+// ══════════════════════════════
+function renderApiEndpoints() {
+  const endpoints = [
+    'GET /api/olts', 'GET /api/admin/olts', 'POST /api/admin/olt', 'PUT /api/admin/olt', 'DELETE /api/admin/olt/:name',
+    'GET /api/history', 'POST /api/history', 'DELETE /api/history', 'DELETE /api/history/:id',
+    'POST /api/activate', 'POST /api/test-ssh', 'POST /api/scan-uncfg',
+    'GET /api/snmp/onu-monitor', 'GET /api/snmp/onu-traffic',
+    'GET /api/onu-cache', 'GET /api/poll-log',
+    'GET /api/admin/mikrotik', 'POST /api/admin/mikrotik', 'PUT /api/admin/mikrotik', 'DELETE /api/admin/mikrotik/:name',
+    'POST /api/mikrotik/test',
+    'GET /api/mikrotik/:name/pppoe/secrets', 'POST /api/mikrotik/:name/pppoe/secrets',
+    'GET /api/mikrotik/:name/pppoe/active', 'GET /api/mikrotik/:name/resource',
+  ];
+  document.getElementById('api-endpoints-list').innerHTML = endpoints.map(e => `<span class="tag">${e}</span>`).join('');
+}
+
+// ─── UTILS ───
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+
+// ══════════════════════════════
+// ─── NETBACKUP MANAGEMENT ───
+// ══════════════════════════════
+ 
+let nbDeviceList = [];
+ 
+async function loadNetbackup() {
+  const tbody = document.getElementById('nb-tbody');
+  const statsEl = document.getElementById('nb-stats-grid');
+  tbody.innerHTML = '<tr class="loading-row"><td colspan="9"><span class="spinner"></span> Memuat...</td></tr>';
+ 
+  // Load stats
+  try {
+    const statsRes = await apiFetch('/api/netbackup/stats');
+    statsEl.innerHTML = `
+      <div class="stat-card"><div class="stat-label">Total Perangkat</div><div class="stat-value accent">${statsRes.totalDevices || 0}</div></div>
+      <div class="stat-card"><div class="stat-label">Aktif</div><div class="stat-value ok">${statsRes.enabledDevices || 0}</div></div>
+      <div class="stat-card"><div class="stat-label">Total Backup</div><div class="stat-value">${statsRes.totalBackups || 0}</div></div>
+      <div class="stat-card"><div class="stat-label">Gagal</div><div class="stat-value danger">${statsRes.failedBackups || 0}</div></div>
+    `;
+  } catch(e) {
+    statsEl.innerHTML = '';
+  }
+ 
+  // Load devices
+  try {
+    const data = await apiFetch('/api/netbackup/devices');
+    nbDeviceList = Array.isArray(data) ? data : [];
+    renderNbTable();
+    document.getElementById('nb-alert-wrap').innerHTML = '';
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--danger);padding:24px">${esc(e.message)}</td></tr>`;
+    document.getElementById('nb-alert-wrap').innerHTML = `<div class="alert alert-danger">⚠ Gagal terhubung ke NetBackup. Pastikan aplikasi NetBackup berjalan di port 4001.</div>`;
+  }
+}
+ 
+function renderNbTable() {
+  const tbody = document.getElementById('nb-tbody');
+  if (!nbDeviceList.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted2);padding:32px">Belum ada perangkat. Klik "Tambah Perangkat" untuk memulai.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = nbDeviceList.map(d => {
+    const statusBadge = d.lastStatus === 'success'
+      ? '<span class="badge ok">Sukses</span>'
+      : d.lastStatus === 'failed'
+      ? '<span class="badge danger">Gagal</span>'
+      : '<span class="badge muted">Belum pernah</span>';
+    const enabledBadge = d.enabled
+      ? '<span class="badge ok">Aktif</span>'
+      : '<span class="badge muted">Nonaktif</span>';
+    const lastBackup = d.lastBackup
+      ? new Date(d.lastBackup).toLocaleString('id-ID')
+      : '<span style="color:var(--muted2)">—</span>';
+    return `<tr>
+      <td><strong>${esc(d.name)}</strong></td>
+      <td class="mono">${esc(d.host)}</td>
+      <td class="mono">${d.port || 22}</td>
+      <td>${esc(d.username)}</td>
+      <td><span class="badge accent">${esc(d.deviceType || 'ruijie')}</span></td>
+      <td class="mono" style="font-size:0.72rem;">${esc(d.schedule || '—')}</td>
+      <td>${enabledBadge} ${statusBadge}</td>
+      <td style="font-size:0.75rem;color:var(--muted2);">${lastBackup}</td>
+      <td>
+        <div class="btn-group">
+          <button class="btn btn-ok btn-xs" onclick="triggerNbBackup('${esc(d.id)}','${esc(d.name)}')" title="Backup Sekarang">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Backup
+          </button>
+          <button class="btn btn-secondary btn-xs" onclick="openNbEditModal('${esc(d.id)}')">Edit</button>
+          <button class="btn btn-danger btn-xs" onclick="confirmDeleteNb('${esc(d.id)}','${esc(d.name)}')">Hapus</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+ 
+function toggleNbAuth() {
+  const val = document.getElementById('nb-authtype').value;
+  document.getElementById('nb-auth-password').style.display = val === 'password' ? 'block' : 'none';
+  document.getElementById('nb-auth-key').style.display = val === 'key' ? 'block' : 'none';
+}
+
+function openNbModal() {
+  document.getElementById('nb-modal-title').textContent = 'Tambah Perangkat Backup';
+  document.getElementById('nb-edit-id').value = '';
+  document.getElementById('nb-name').value = '';
+  document.getElementById('nb-host').value = '';
+  document.getElementById('nb-port').value = '22';
+  document.getElementById('nb-username').value = '';
+  document.getElementById('nb-password').value = '';
+  document.getElementById('nb-authtype').value = 'password';
+  document.getElementById('nb-keypath').value = '';
+  document.getElementById('nb-commands').value = '';
+  document.getElementById('nb-devicetype').value = 'ruijie';
+  document.getElementById('nb-schedule').value = '0 2 * * *';
+  document.getElementById('nb-enabled').checked = true;
+  document.getElementById('nb-modal-alert').innerHTML = '';
+  toggleNbAuth();
+  openModal('nb-modal');
+  setTimeout(() => document.getElementById('nb-name').focus(), 100);
+}
+
+function openNbEditModal(id) {
+  const d = nbDeviceList.find(x => x.id === id);
+  if (!d) return;
+  document.getElementById('nb-modal-title').textContent = 'Edit Perangkat Backup';
+  document.getElementById('nb-edit-id').value = d.id;
+  document.getElementById('nb-name').value = d.name || '';
+  document.getElementById('nb-host').value = d.host || '';
+  document.getElementById('nb-port').value = d.port || 22;
+  document.getElementById('nb-username').value = d.username || '';
+  document.getElementById('nb-password').value = '';
+  document.getElementById('nb-authtype').value = d.authType || 'password';
+  document.getElementById('nb-keypath').value = d.keyPath || '';
+  document.getElementById('nb-commands').value = Array.isArray(d.commands) ? d.commands.join('\n') : (d.commands || '');
+  document.getElementById('nb-devicetype').value = d.deviceType || 'ruijie';
+  document.getElementById('nb-schedule').value = d.schedule || '0 2 * * *';
+  document.getElementById('nb-enabled').checked = d.enabled !== false;
+  document.getElementById('nb-modal-alert').innerHTML = '';
+  toggleNbAuth();
+  openModal('nb-modal');
+}
+
+async function submitNbDevice() {
+  const id = document.getElementById('nb-edit-id').value;
+  const isEdit = !!id;
+  const alertEl = document.getElementById('nb-modal-alert');
+
+  const name = document.getElementById('nb-name').value.trim();
+  const host = document.getElementById('nb-host').value.trim();
+  const username = document.getElementById('nb-username').value.trim();
+  const commands = document.getElementById('nb-commands').value.split('\n').map(s => s.trim()).filter(Boolean);
+
+  if (!name || !host || !username) {
+    alertEl.innerHTML = '<div class="alert alert-danger">Nama, Host, dan Username wajib diisi</div>';
+    return;
+  }
+  if (!commands.length) {
+    alertEl.innerHTML = '<div class="alert alert-danger">Commands wajib diisi minimal 1 baris</div>';
+    return;
+  }
+
+  const payload = {
+    name,
+    host,
+    port: parseInt(document.getElementById('nb-port').value) || 22,
+    username,
+    password: document.getElementById('nb-password').value,
+    authType: document.getElementById('nb-authtype').value,
+    keyPath: document.getElementById('nb-keypath').value.trim(),
+    deviceType: document.getElementById('nb-devicetype').value,
+    commands,
+    schedule: document.getElementById('nb-schedule').value.trim() || '0 2 * * *',
+    enabled: document.getElementById('nb-enabled').checked,
+  };
+  // Jika edit dan password kosong, jangan kirim (jaga password lama)
+  if (isEdit && !payload.password) delete payload.password;
+
+  try {
+    const url = isEdit ? '/api/netbackup/devices/' + id : '/api/netbackup/devices';
+    const method = isEdit ? 'PUT' : 'POST';
+    const res = await apiFetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: payload,
+    });
+    if (res.error) throw new Error(res.error);
+    closeModal('nb-modal');
+    toast((isEdit ? 'Perangkat ' : 'Perangkat ') + name + (isEdit ? ' diperbarui' : ' ditambahkan'), 'ok');
+    loadNetbackup();
+  } catch(e) {
+    alertEl.innerHTML = `<div class="alert alert-danger">${esc(e.message)}</div>`;
+  }
+}
+ 
+function confirmDeleteNb(id, name) {
+  openConfirm('🗑️', 'Hapus Perangkat', `Hapus perangkat <strong>${esc(name)}</strong> dari NetBackup? Data backup yang sudah ada tidak akan ikut terhapus.`, async () => {
+    try {
+      await apiFetch('/api/netbackup/devices/' + id, { method: 'DELETE' });
+      toast('Perangkat ' + name + ' dihapus', 'ok');
+      loadNetbackup();
+    } catch(e) {
+      toast(e.message, 'danger');
+    }
+  });
+}
+ 
+async function triggerNbBackup(id, name) {
+  try {
+    toast('Memulai backup ' + name + '...', 'info');
+    await apiFetch('/api/netbackup/backup/' + id, { method: 'POST' });
+    toast('Backup ' + name + ' dimulai', 'ok');
+    setTimeout(loadNetbackup, 3000);
+  } catch(e) {
+    toast('Gagal memulai backup: ' + e.message, 'danger');
+  }
+}
+
+
+// ─── INIT ───
+window.addEventListener('DOMContentLoaded', () => {
+  loadOlt();
+});
+
+// Close modal on overlay click
+document.querySelectorAll('.modal-overlay').forEach(o => {
+  o.addEventListener('click', e => {
+    if (e.target === o) o.classList.remove('open');
+  });
+});
+document.getElementById('confirm-overlay').addEventListener('click', e => {
+  if (e.target.id === 'confirm-overlay') closeConfirm();
+});
+
+// ─── USERS PAGE ───
+let userList = [];
+
+async function loadUsers() {
+  const tbody = document.getElementById('user-tbody');
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted2);padding:24px">Memuat...</td></tr>';
+  try {
+    const res = await fetch('/api/users');
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message);
+    userList = data.users;
+    renderUserTable();
+  } catch(e) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--danger);padding:24px">' + e.message + '</td></tr>';
+  }
+}
+
+function renderUserTable() {
+  const tbody = document.getElementById('user-tbody');
+  const me = window.__nocsUser || {};
+  if (!userList.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted2);padding:24px">Belum ada user</td></tr>';
+    return;
+  }
+  tbody.innerHTML = userList.map(u => {
+    const isMe = u.username === me.username;
+    const date = u.created_at ? new Date(u.created_at * 1000).toLocaleString('id-ID') : '-';
+    const roleBadge = u.role === 'admin'
+      ? '<span style="background:rgba(59,130,246,0.15);color:#93c5fd;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;text-transform:uppercase">ADMIN</span>'
+      : '<span style="background:rgba(16,185,129,0.12);color:#6ee7b7;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;text-transform:uppercase">OPERATOR</span>';
+    const deleteBtn = isMe
+      ? '<span style="color:var(--muted2);font-size:12px">— akun aktif</span>'
+      : '<button class="btn btn-danger btn-sm" onclick="confirmDeleteUser(' + u.id + ',\'' + u.username + '\')" >Hapus</button>';
+    return '<tr>' +
+      '<td style="color:var(--muted2)">#' + u.id + '</td>' +
+      '<td><strong>' + u.username + '</strong>' + (isMe ? ' <span style="color:var(--accent);font-size:11px">(Anda)</span>' : '') + '</td>' +
+      '<td>' + roleBadge + '</td>' +
+      '<td style="color:var(--muted2);font-size:12px">' + date + '</td>' +
+      '<td>' + deleteBtn + '</td>' +
+      '</tr>';
+  }).join('');
+}
+
+function openUserModal() {
+  document.getElementById('new-username').value = '';
+  document.getElementById('new-password').value = '';
+  document.getElementById('new-role').value = 'operator';
+  document.getElementById('user-modal-alert').innerHTML = '';
+  openModal('user-modal');
+  setTimeout(() => document.getElementById('new-username').focus(), 100);
+}
+
+async function submitAddUser() {
+  const username = document.getElementById('new-username').value.trim();
+  const password = document.getElementById('new-password').value;
+  const role = document.getElementById('new-role').value;
+  const alertEl = document.getElementById('user-modal-alert');
+
+  if (!username || !password) {
+    alertEl.innerHTML = '<div class="alert alert-error">Username dan password wajib diisi</div>';
+    return;
+  }
+  if (password.length < 6) {
+    alertEl.innerHTML = '<div class="alert alert-error">Password minimal 6 karakter</div>';
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password, role })
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message);
+    closeModal('user-modal');
+    toast('User ' + username + ' berhasil ditambahkan', 'ok');
+    loadUsers();
+  } catch(e) {
+    alertEl.innerHTML = '<div class="alert alert-error">' + e.message + '</div>';
+  }
+}
+
+function confirmDeleteUser(id, username) {
+  showConfirm(
+    'Hapus User',
+    'Hapus user <strong>' + username + '</strong>? Tindakan ini tidak bisa dibatalkan.',
+    async () => {
+      try {
+        const res = await fetch('/api/users/' + id, { method: 'DELETE' });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.message);
+        toast('User ' + username + ' dihapus', 'ok');
+        loadUsers();
+      } catch(e) {
+        toast(e.message, 'error');
+      }
+    }
+  );
+}
+
+function openChangePwModal() {
+  document.getElementById('old-password').value = '';
+  document.getElementById('new-password2').value = '';
+  document.getElementById('confirm-password').value = '';
+  document.getElementById('changepw-alert').innerHTML = '';
+  openModal('changepw-modal');
+  setTimeout(() => document.getElementById('old-password').focus(), 100);
+}
+
+async function submitChangePw() {
+  const oldPassword = document.getElementById('old-password').value;
+  const newPassword = document.getElementById('new-password2').value;
+  const confirmPw = document.getElementById('confirm-password').value;
+  const alertEl = document.getElementById('changepw-alert');
+
+  if (!oldPassword || !newPassword || !confirmPw) {
+    alertEl.innerHTML = '<div class="alert alert-error">Semua field wajib diisi</div>';
+    return;
+  }
+  if (newPassword.length < 6) {
+    alertEl.innerHTML = '<div class="alert alert-error">Password baru minimal 6 karakter</div>';
+    return;
+  }
+  if (newPassword !== confirmPw) {
+    alertEl.innerHTML = '<div class="alert alert-error">Konfirmasi password tidak cocok</div>';
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/auth/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ oldPassword, newPassword })
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message);
+    closeModal('changepw-modal');
+    toast('Password berhasil diubah', 'ok');
+  } catch(e) {
+    alertEl.innerHTML = '<div class="alert alert-error">' + e.message + '</div>';
+  }
+}
+
+
+</script>
+</body>
+</html>
