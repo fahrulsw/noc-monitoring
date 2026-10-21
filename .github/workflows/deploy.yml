@@ -18,6 +18,7 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 3222   # <--- Ubah angka ini sesuai port SSH VPS Anda
           script: |
             cd /var/www/onu-activator
             git reset --hard origin/main
