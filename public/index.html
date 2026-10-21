@@ -2879,6 +2879,11 @@ document.addEventListener('DOMContentLoaded', function() {
         <span class="sidebar-item-label">FFmpeg</span>
         <span class="sidebar-badge" id="sb-ffmpeg-count">—</span>
       </div>
+      <div class="sidebar-item" data-page="proxmox" onclick="switchPage('proxmox'); initProxmoxPage();">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="3" width="20" height="6" rx="1"/><rect x="2" y="13" width="20" height="6" rx="1"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="16" x2="6.01" y2="16"/></svg>
+        <span class="sidebar-item-label">Proxmox</span>
+        <span class="sidebar-badge" id="sb-proxmox-count">—</span>
+      </div>
       <div class="sidebar-item" data-page="rbl" onclick="switchPage('rbl')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><path d="M8 11l2 2 4-4"/></svg>
         <span class="sidebar-item-label">Scan RBL</span>
@@ -3048,6 +3053,15 @@ document.addEventListener('DOMContentLoaded', function() {
           <div id="dash-olt-health" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;">
             <div style="grid-column:1/-1;text-align:center;font-family:var(--mono);font-size:0.72rem;color:var(--muted);padding:20px 0;">Memuat data kesehatan OLT...</div>
           </div>
+        </div>
+
+        <!-- Proxmox Resource (node per server) -->
+        <div id="dash-pve-section" style="margin-bottom:22px;display:none;">
+          <div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted2);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;">
+            <span style="cursor:pointer;" onclick="switchPage('proxmox'); initProxmoxPage();" title="Buka halaman Proxmox">Resource Proxmox</span>
+            <span id="dash-pve-updated" style="text-transform:none;letter-spacing:normal;color:var(--muted);font-size:0.68rem;"></span>
+          </div>
+          <div id="dash-pve-nodes" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;"></div>
         </div>
 
         <!-- Recent activations + signal quality -->
@@ -3664,6 +3678,62 @@ document.addEventListener('DOMContentLoaded', function() {
       </div>
     </div><!-- /page-ffmpeg -->
 
+    <!-- ═══ PAGE: PROXMOX ═══ -->
+    <div class="page-panel" id="page-proxmox">
+      <div class="page-header">
+        <div>
+          <div class="page-title-row">
+            <span class="page-title">Proxmox</span>
+            <span class="page-badge">RESOURCE</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span id="pve-updated" style="font-family:var(--mono);font-size:0.65rem;color:var(--muted2);"></span>
+          <button class="term-action" onclick="loadProxmoxResources()" id="pve-refresh-btn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            REFRESH
+          </button>
+        </div>
+      </div>
+
+      <div style="flex:1;overflow-y:auto;padding:16px 20px;scrollbar-width:thin;scrollbar-color:var(--border2) transparent;" id="pve-body">
+        <div id="pve-error" style="display:none;margin-bottom:16px;padding:10px 14px;background:rgba(255,77,106,0.1);border:1px solid rgba(255,77,106,0.3);border-radius:8px;font-family:var(--mono);font-size:0.72rem;color:var(--danger);"></div>
+
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap;">
+          <select id="pve-server-select" onchange="pveOnServerSelect()" style="flex:1;min-width:200px;max-width:340px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-family:var(--mono);font-size:0.78rem;">
+            <option value="">Memuat...</option>
+          </select>
+          <button class="btn btn-primary" style="font-size:0.68rem;padding:7px 12px;" onclick="openProxmoxModal()">+ SERVER</button>
+          <button class="btn btn-ghost" style="font-size:0.68rem;padding:7px 12px;color:var(--danger);" onclick="deleteProxmoxServer()" id="pve-del-btn">HAPUS</button>
+        </div>
+
+        <div id="pve-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:20px;"></div>
+
+        <div style="font-family:var(--mono);font-size:0.68rem;color:var(--muted2);letter-spacing:0.08em;margin-bottom:10px;">NODE</div>
+        <div id="pve-nodes" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:24px;">
+          <div style="padding:20px;color:var(--muted2);font-family:var(--mono);font-size:0.72rem;">Pilih atau tambah server Proxmox.</div>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:10px;flex-wrap:wrap;">
+          <div style="font-family:var(--mono);font-size:0.68rem;color:var(--muted2);letter-spacing:0.08em;">VM &amp; LXC</div>
+          <input type="text" id="pve-guest-filter" oninput="renderPveGuests()" placeholder="Cari nama / VMID..." style="width:220px;max-width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-family:var(--mono);font-size:0.72rem;">
+        </div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow-x:auto;margin-bottom:24px;">
+          <table style="width:100%;border-collapse:collapse;font-family:var(--mono);font-size:0.72rem;min-width:760px;">
+            <thead>
+              <tr style="color:var(--muted2);text-align:left;border-bottom:1px solid var(--border);">
+                <th style="padding:9px 12px;">VMID</th><th style="padding:9px 12px;">NAMA</th><th style="padding:9px 12px;">TIPE</th><th style="padding:9px 12px;">NODE</th><th style="padding:9px 12px;">STATUS</th><th style="padding:9px 12px;min-width:120px;">CPU</th><th style="padding:9px 12px;min-width:150px;">RAM</th><th style="padding:9px 12px;">UPTIME</th>
+              </tr>
+            </thead>
+            <tbody id="pve-guests-body"></tbody>
+          </table>
+        </div>
+
+        <div style="font-family:var(--mono);font-size:0.68rem;color:var(--muted2);letter-spacing:0.08em;margin-bottom:10px;">STORAGE</div>
+        <div id="pve-storages" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-bottom:10px;"></div>
+      </div>
+    </div><!-- /page-proxmox -->
+
     <!-- ═══ PAGE: SCAN RBL ═══ -->
     <div class="page-panel" id="page-rbl">
       <div class="page-header">
@@ -3850,6 +3920,27 @@ document.addEventListener('DOMContentLoaded', function() {
   </div>
 </div>
 
+<!-- MODAL: Tambah Server Proxmox -->
+<div id="pve-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:var(--surface);border:1px solid var(--border2);border-radius:12px;width:440px;max-width:95vw;padding:24px;">
+    <div style="font-family:var(--mono);font-size:0.8rem;font-weight:700;color:var(--accent);letter-spacing:0.06em;margin-bottom:18px;">TAMBAH SERVER PROXMOX</div>
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div><label>Nama *</label><input type="text" id="pve-f-name" placeholder="misal: PVE-DEMPET"></div>
+      <div><label>Host / IP *</label><input type="text" id="pve-f-host" placeholder="192.168.11.10"></div>
+      <div><label>Port</label><input type="text" id="pve-f-port" placeholder="8006 (default)"></div>
+      <div><label>Token ID *</label><input type="text" id="pve-f-tokenid" placeholder="monitor@pve!nocs"></div>
+      <div><label>Token Secret *</label><input type="password" id="pve-f-secret" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="new-password"></div>
+      <div style="font-family:var(--mono);font-size:0.65rem;color:var(--muted2);">Buat di Proxmox: Datacenter → Permissions → API Tokens (matikan Privilege Separation), lalu beri user role <b>PVEAuditor</b> di path <b>/</b> (read-only).</div>
+      <div id="pve-f-msg" style="display:none;padding:8px 12px;background:rgba(255,77,106,0.1);border:1px solid rgba(255,77,106,0.3);border-radius:6px;font-family:var(--mono);font-size:0.72rem;color:var(--danger);"></div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
+      <button class="btn btn-ghost" onclick="closeProxmoxModal()">Batal</button>
+      <button class="btn btn-ghost" onclick="testProxmoxForm()" style="color:var(--info);border-color:rgba(77,184,255,0.3);">Test Koneksi</button>
+      <button class="btn btn-primary" onclick="submitProxmox()">Simpan</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: Tambah Script FFmpeg (.sh) baru -->
 <div id="ff-new-script-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;align-items:center;justify-content:center;">
   <div style="background:var(--surface);border:1px solid var(--border2);border-radius:12px;width:460px;max-width:95vw;padding:24px;">
@@ -3918,6 +4009,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (name !== 'dashboard') stopBandwidthPolling();
     if (name !== 'mikrotik') stopUptimeTimer();
     if (name !== 'uptime') stopUptimePollTimer();
+    if (name !== 'proxmox') stopProxmoxPolling();
   }
 
   // Handler klik item di dalam dropdown "Manajemen ONU"
@@ -4730,6 +4822,259 @@ document.addEventListener('DOMContentLoaded', function() {
     } catch (e) {
       alert('Gagal menghapus monitor.');
     }
+  }
+
+  // ─── PROXMOX PAGE ───
+  let pveServers = [];
+  let pveSelected = null;
+  let pveData = null;
+  let pveTimer = null;
+  let pveInitDone = false;
+  const PVE_REFRESH_MS = 15000;
+
+  function initProxmoxPage() {
+    if (!pveInitDone) {
+      pveInitDone = true;
+      loadProxmoxServers();
+    } else {
+      loadProxmoxResources();
+    }
+    startProxmoxPolling();
+  }
+
+  function startProxmoxPolling() {
+    stopProxmoxPolling();
+    pveTimer = setInterval(() => { if (!document.hidden) loadProxmoxResources(true); }, PVE_REFRESH_MS);
+  }
+  function stopProxmoxPolling() {
+    if (pveTimer) { clearInterval(pveTimer); pveTimer = null; }
+  }
+
+  async function loadProxmoxServers() {
+    const sel = document.getElementById('pve-server-select');
+    try {
+      const res = await fetch('/api/admin/proxmox');
+      pveServers = await res.json();
+      if (!Array.isArray(pveServers)) pveServers = [];
+      const badge = document.getElementById('sb-proxmox-count');
+      if (badge) badge.textContent = pveServers.length || '—';
+      if (!pveServers.length) {
+        sel.innerHTML = '<option value="">Belum ada server Proxmox</option>';
+        pveSelected = null;
+        renderPveEmpty();
+        return;
+      }
+      if (!pveSelected || !pveServers.some(s => s.name === pveSelected)) pveSelected = pveServers[0].name;
+      sel.innerHTML = pveServers.map(s =>
+        `<option value="${escHtml(s.name)}" ${s.name === pveSelected ? 'selected' : ''}>${escHtml(s.name)} (${escHtml(s.host)})</option>`
+      ).join('');
+      loadProxmoxResources();
+    } catch (e) {
+      sel.innerHTML = '<option value="">Gagal memuat</option>';
+      pveShowError(e.message);
+    }
+  }
+
+  function pveOnServerSelect() {
+    pveSelected = document.getElementById('pve-server-select').value || null;
+    pveData = null;
+    if (pveSelected) loadProxmoxResources();
+  }
+
+  function pveShowError(msg) {
+    const el = document.getElementById('pve-error');
+    if (!msg) { el.style.display = 'none'; return; }
+    el.textContent = msg;
+    el.style.display = '';
+  }
+
+  function renderPveEmpty() {
+    document.getElementById('pve-summary').innerHTML = '';
+    document.getElementById('pve-nodes').innerHTML = '<div style="padding:20px;color:var(--muted2);font-family:var(--mono);font-size:0.72rem;">Klik “+ SERVER” untuk menambahkan Proxmox.</div>';
+    document.getElementById('pve-guests-body').innerHTML = '';
+    document.getElementById('pve-storages').innerHTML = '';
+  }
+
+  async function loadProxmoxResources(silent) {
+    if (!pveSelected) return;
+    const btn = document.getElementById('pve-refresh-btn');
+    if (!silent && btn) btn.disabled = true;
+    try {
+      const res = await fetch(`/api/proxmox/${encodeURIComponent(pveSelected)}/resources`);
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message || 'Gagal memuat data Proxmox');
+      pveData = data;
+      pveShowError(null);
+      renderPveAll();
+      document.getElementById('pve-updated').textContent = 'Update ' + new Date(data.ts).toLocaleTimeString('id-ID');
+    } catch (e) {
+      pveShowError(e.message);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function pveColor(pct) {
+    if (pct >= 85) return 'var(--danger)';
+    if (pct >= 70) return 'var(--warn)';
+    return 'var(--ok)';
+  }
+  function pveBar(pct, label) {
+    const p = Math.max(0, Math.min(100, Number(pct) || 0));
+    return `<div style="display:flex;align-items:center;gap:8px;">
+      <div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden;min-width:50px;">
+        <div style="width:${p}%;height:100%;background:${pveColor(p)};"></div>
+      </div>
+      <span style="min-width:${label ? 'auto' : '38px'};color:var(--text);">${label || p.toFixed(1) + '%'}</span>
+    </div>`;
+  }
+  function pveBytes(b) {
+    b = Number(b) || 0;
+    const u = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+    let i = 0;
+    while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
+    return b.toFixed(i >= 3 ? 1 : 0) + ' ' + u[i];
+  }
+  function pveUptime(sec) {
+    sec = Number(sec) || 0;
+    if (!sec) return '—';
+    const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
+    if (d > 0) return `${d}d ${h}h`;
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
+  }
+
+  function renderPveAll() {
+    if (!pveData) return;
+    const s = pveData.summary;
+    const runningPct = s.guestsTotal ? (s.guestsRunning / s.guestsTotal) * 100 : 0;
+    const card = (label, value, sub, color) => `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;">
+        <div style="font-family:var(--mono);font-size:0.62rem;color:var(--muted2);letter-spacing:0.08em;">${label}</div>
+        <div style="font-family:var(--mono);font-size:1.3rem;font-weight:700;color:${color || 'var(--text)'};margin-top:4px;">${value}</div>
+        <div style="font-family:var(--mono);font-size:0.62rem;color:var(--muted2);margin-top:2px;">${sub}</div>
+      </div>`;
+    const allNodesUp = s.nodesOnline === s.nodesTotal;
+    document.getElementById('pve-summary').innerHTML =
+      card('NODE ONLINE', `${s.nodesOnline}/${s.nodesTotal}`, allNodesUp ? 'semua normal' : 'ada node offline', allNodesUp ? 'var(--ok)' : 'var(--danger)') +
+      card('VM / LXC RUNNING', `${s.guestsRunning}/${s.guestsTotal}`, `${Math.round(runningPct)}% menyala`, 'var(--accent)');
+
+    document.getElementById('pve-nodes').innerHTML = pveData.nodes.map(n => `
+      <div style="background:var(--surface);border:1px solid ${n.online ? 'var(--border)' : 'rgba(255,77,106,0.4)'};border-radius:8px;padding:14px;font-family:var(--mono);font-size:0.72rem;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <span style="font-weight:700;color:var(--accent);font-size:0.8rem;">${escHtml(n.node)}</span>
+          <span style="color:${n.online ? 'var(--ok)' : 'var(--danger)'};font-weight:700;">${n.online ? '● ONLINE' : '● OFFLINE'}</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:9px;">
+          <div><div style="color:var(--muted2);margin-bottom:3px;">CPU · ${n.cpuCores} core</div>${pveBar(n.cpu)}</div>
+          <div><div style="color:var(--muted2);margin-bottom:3px;">RAM · ${pveBytes(n.memUsed)} / ${pveBytes(n.memTotal)}</div>${pveBar(n.memPct)}</div>
+          <div><div style="color:var(--muted2);margin-bottom:3px;">Disk root · ${pveBytes(n.diskUsed)} / ${pveBytes(n.diskTotal)}</div>${pveBar(n.diskPct)}</div>
+        </div>
+        <div style="margin-top:10px;color:var(--muted2);">Uptime ${pveUptime(n.uptime)}</div>
+      </div>`).join('') || '<div style="padding:20px;color:var(--muted2);">Tidak ada node.</div>';
+
+    renderPveGuests();
+
+    document.getElementById('pve-storages').innerHTML = pveData.storages.map(st => `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;font-family:var(--mono);font-size:0.72rem;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+          <span style="font-weight:700;color:var(--text);">${escHtml(st.storage)}</span>
+          <span style="color:var(--muted2);">${escHtml(st.node)}${st.shared ? ' · shared' : ''}</span>
+        </div>
+        ${pveBar(st.pct)}
+        <div style="margin-top:6px;color:var(--muted2);">${pveBytes(st.used)} / ${pveBytes(st.total)}</div>
+      </div>`).join('') || '<div style="padding:10px;color:var(--muted2);font-family:var(--mono);font-size:0.72rem;">Tidak ada storage.</div>';
+  }
+
+  function renderPveGuests() {
+    const body = document.getElementById('pve-guests-body');
+    if (!pveData) { body.innerHTML = ''; return; }
+    const q = (document.getElementById('pve-guest-filter').value || '').trim().toLowerCase();
+    const list = pveData.guests.filter(g => !q || String(g.vmid).includes(q) || g.name.toLowerCase().includes(q));
+    // running di atas, lalu urut VMID
+    list.sort((a, b) => (b.status === 'running') - (a.status === 'running') || a.vmid - b.vmid);
+    if (!list.length) {
+      body.innerHTML = '<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--muted2);">Tidak ada VM/LXC.</td></tr>';
+      return;
+    }
+    body.innerHTML = list.map(g => {
+      const running = g.status === 'running';
+      return `<tr style="border-bottom:1px solid var(--border);${running ? '' : 'opacity:0.55;'}">
+        <td style="padding:8px 12px;color:var(--accent);">${g.vmid}</td>
+        <td style="padding:8px 12px;color:var(--text);">${escHtml(g.name)}</td>
+        <td style="padding:8px 12px;color:var(--muted2);">${g.type}</td>
+        <td style="padding:8px 12px;color:var(--muted2);">${escHtml(g.node)}</td>
+        <td style="padding:8px 12px;color:${running ? 'var(--ok)' : 'var(--danger)'};font-weight:700;">${running ? 'RUNNING' : escHtml(String(g.status || '').toUpperCase())}</td>
+        <td style="padding:8px 12px;">${running ? pveBar(g.cpu) : '—'}</td>
+        <td style="padding:8px 12px;">${running ? pveBar(g.memPct, `${pveBytes(g.memUsed)} / ${pveBytes(g.memTotal)}`) : '—'}</td>
+        <td style="padding:8px 12px;color:var(--muted2);">${running ? pveUptime(g.uptime) : '—'}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── Modal tambah server ──
+  function openProxmoxModal() {
+    ['pve-f-name', 'pve-f-host', 'pve-f-port', 'pve-f-tokenid', 'pve-f-secret'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('pve-f-msg').style.display = 'none';
+    document.getElementById('pve-modal').style.display = 'flex';
+  }
+  function closeProxmoxModal() {
+    document.getElementById('pve-modal').style.display = 'none';
+  }
+  function pveFormValues() {
+    return {
+      name: document.getElementById('pve-f-name').value.trim(),
+      host: document.getElementById('pve-f-host').value.trim(),
+      port: parseInt(document.getElementById('pve-f-port').value) || 8006,
+      token_id: document.getElementById('pve-f-tokenid').value.trim(),
+      token_secret: document.getElementById('pve-f-secret').value.trim(),
+    };
+  }
+  function pveFormMsg(text, ok) {
+    const el = document.getElementById('pve-f-msg');
+    el.style.display = '';
+    el.textContent = (ok ? '✓ ' : '') + text;
+    el.style.background = ok ? 'rgba(52,211,153,0.1)' : 'rgba(255,77,106,0.1)';
+    el.style.borderColor = ok ? 'rgba(52,211,153,0.3)' : 'rgba(255,77,106,0.3)';
+    el.style.color = ok ? 'var(--ok)' : 'var(--danger)';
+  }
+  async function testProxmoxForm() {
+    const v = pveFormValues();
+    if (!v.host || !v.token_id || !v.token_secret) return pveFormMsg('Host, Token ID, dan Token Secret wajib diisi', false);
+    pveFormMsg('Menguji koneksi...', true);
+    try {
+      const res = await fetch('/api/proxmox/test', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(v),
+      });
+      const data = await res.json();
+      pveFormMsg(data.message, !!data.success);
+    } catch (e) { pveFormMsg(e.message, false); }
+  }
+  async function submitProxmox() {
+    const v = pveFormValues();
+    if (!v.name || !v.host || !v.token_id || !v.token_secret) return pveFormMsg('Semua field bertanda * wajib diisi', false);
+    try {
+      const res = await fetch('/api/admin/proxmox', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(v),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message);
+      closeProxmoxModal();
+      pveSelected = v.name;
+      await loadProxmoxServers();
+    } catch (e) { pveFormMsg(e.message, false); }
+  }
+  async function deleteProxmoxServer() {
+    if (!pveSelected) return;
+    const ok = await showConfirm({ title: 'Hapus Server Proxmox?', body: 'Server berikut akan dihapus dari daftar pantauan:', target: pveSelected, confirmLabel: 'Ya, Hapus', showWarn: true });
+    if (!ok) return;
+    try {
+      const res = await fetch(`/api/admin/proxmox/${encodeURIComponent(pveSelected)}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message);
+      pveSelected = null; pveData = null;
+      await loadProxmoxServers();
+    } catch (e) { pveShowError(e.message); }
   }
 
   // ─── FFMPEG PAGE ───
@@ -8145,6 +8490,7 @@ function refreshDashboard(forceApi) {
   initBandwidthWidget();
   if (typeof rblUpdateDashboardCard === 'function') rblUpdateDashboardCard();
   loadOltHealth();
+  if (typeof loadProxmoxDash === 'function') loadProxmoxDash();
   // forceApi=true (tombol REFRESH) → abaikan cache, ambil dari SNMP
   if (forceApi && typeof monitorData !== 'undefined') {
     const _bak = monitorData.slice();
@@ -8152,6 +8498,66 @@ function refreshDashboard(forceApi) {
     loadDashMonitor().catch(() => { monitorData = _bak; });
   } else {
     loadDashMonitor();
+  }
+}
+
+// ── Resource Proxmox: kartu node di Dashboard ──
+async function loadProxmoxDash() {
+  const section = document.getElementById('dash-pve-section');
+  const container = document.getElementById('dash-pve-nodes');
+  if (!section || !container) return;
+  try {
+    const r = await fetch('/api/proxmox/summary');
+    const d = await r.json();
+    if (!d.success) throw new Error(d.message || 'Gagal memuat data');
+
+    // Belum ada server Proxmox terdaftar -> sembunyikan seluruh section
+    if (!d.serverCount) { section.style.display = 'none'; return; }
+    section.style.display = '';
+
+    const updEl = document.getElementById('dash-pve-updated');
+    if (updEl) updEl.textContent = 'Update terakhir: ' + new Date(d.ts).toLocaleTimeString('id-ID');
+
+    const metric = (label, valText, pct) => {
+      const p = Math.max(0, Math.min(100, Number(pct) || 0));
+      return `<div>
+        <div class="olt-health-metric-label"><span>${label}</span><span>${valText}</span></div>
+        <div class="olt-health-bar-track"><div class="olt-health-bar-fill ${oltHealthBarClass(p)}" style="width:${p}%;"></div></div>
+      </div>`;
+    };
+
+    const nodeCards = (d.nodes || []).map(n => `
+      <div class="olt-health-card" ${n.online ? '' : 'style="border-color:rgba(255,77,106,0.4);"'}>
+        <div class="olt-health-card-head">
+          <span class="olt-health-name">${escHtml(n.node)} <span style="color:var(--muted);font-weight:400;">· ${escHtml(n.server)}</span></span>
+          <span class="olt-health-uptime" style="color:${n.online ? 'var(--ok)' : 'var(--danger)'};">${n.online ? '● ONLINE' : '● OFFLINE'}</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:9px;">
+          ${metric('CPU · ' + n.cpuCores + ' core', n.cpu.toFixed(1) + '%', n.cpu)}
+          ${metric('RAM · ' + pveBytes(n.memUsed) + ' / ' + pveBytes(n.memTotal), n.memPct.toFixed(1) + '%', n.memPct)}
+          ${metric('Disk · ' + pveBytes(n.diskUsed) + ' / ' + pveBytes(n.diskTotal), n.diskPct.toFixed(1) + '%', n.diskPct)}
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:10px;font-family:var(--mono);font-size:0.66rem;color:var(--muted);">
+          <span>VM/LXC: ${n.guestsRunning}/${n.guestsTotal} running</span>
+          <span>Uptime ${pveUptime(n.uptime)}</span>
+        </div>
+      </div>`).join('');
+
+    // Server yang gagal dihubungi tetap ditampilkan sebagai kartu error (bukan hilang diam-diam)
+    const errCards = (d.errors || []).map(e => `
+      <div class="olt-health-card" style="border-color:rgba(255,77,106,0.4);">
+        <div class="olt-health-card-head">
+          <span class="olt-health-name">${escHtml(e.server)}</span>
+          <span class="olt-health-uptime" style="color:var(--danger);">● TIDAK TERJANGKAU</span>
+        </div>
+        <div style="font-family:var(--mono);font-size:0.66rem;color:var(--muted);padding:6px 0;">${escHtml(e.message || 'Gagal menghubungi Proxmox')}</div>
+      </div>`).join('');
+
+    container.innerHTML = (nodeCards + errCards) ||
+      '<div style="grid-column:1/-1;text-align:center;font-family:var(--mono);font-size:0.72rem;color:var(--muted);padding:20px 0;">Tidak ada node</div>';
+  } catch (e) {
+    section.style.display = '';
+    container.innerHTML = `<div style="grid-column:1/-1;text-align:center;font-family:var(--mono);font-size:0.72rem;color:var(--muted);padding:20px 0;">Gagal memuat resource Proxmox (${escHtml(e.message)})</div>`;
   }
 }
 
@@ -9222,7 +9628,7 @@ function dismissToast() {
 // Pakai sessionStorage (bukan localStorage) supaya kalau tab/browser ditutup lalu dibuka baru,
 // tampilan tetap mulai dari Dashboard seperti semula — hanya refresh di tab yang sama yang dipertahankan.
 (function() {
-  var NOCS_VALID_PAGES = ['dashboard', 'activate', 'monitor', 'history', 'mikrotik', 'ffmpeg', 'rbl', 'uptime'];
+  var NOCS_VALID_PAGES = ['dashboard', 'activate', 'monitor', 'history', 'mikrotik', 'ffmpeg', 'rbl', 'uptime', 'proxmox'];
   var savedPage = sessionStorage.getItem('nocs_last_page');
   if (!savedPage || savedPage === 'dashboard' || !NOCS_VALID_PAGES.includes(savedPage)) return;
 
@@ -9232,6 +9638,7 @@ function dismissToast() {
   if (savedPage === 'mikrotik') initMikrotikPage();
   if (savedPage === 'ffmpeg') initFfmpegPage();
   if (savedPage === 'uptime') initUptimePage();
+  if (savedPage === 'proxmox') initProxmoxPage();
 })();
 </script>
 </body>

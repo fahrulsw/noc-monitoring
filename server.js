@@ -144,6 +144,19 @@ db.exec(`
   )
 `);
 
+// --- TABEL PROXMOX CONFIG (persisten) — monitoring resource via API token Proxmox VE ---
+// token_id     : format "user@realm!tokenname", contoh "monitor@pve!nocs"
+// token_secret : UUID secret yang muncul sekali saat token dibuat
+db.exec(`
+  CREATE TABLE IF NOT EXISTS proxmox_config (
+    name         TEXT PRIMARY KEY,
+    host         TEXT NOT NULL,
+    port         INTEGER DEFAULT 8006,
+    token_id     TEXT NOT NULL,
+    token_secret TEXT NOT NULL
+  )
+`);
+
 // Hash password dengan fixed salt (tidak tergantung JWT_SECRET)
 const PW_SALT = 'nocs-pw-salt-2024';
 function hashPassword(password) {
@@ -3326,6 +3339,264 @@ app.put('/api/ffmpeg/:agentId/scripts/:name', requireAuth, async (req, res) => {
 
 // ============================================================
 // END PATCH: FFmpeg Agent Proxy
+// ============================================================
+
+// ============================================================
+// PATCH: Proxmox VE Resource Monitoring (API token, port 8006)
+// ============================================================
+// Cara buat token di Proxmox:
+//   Datacenter > Permissions > API Tokens > Add
+//   User: monitor@pve (buat user khusus), Token ID: nocs, UNCHECK "Privilege Separation"
+//   Beri role "PVEAuditor" (read-only) di path "/" untuk user tsb.
+// Isi "token_id" = monitor@pve!nocs dan "token_secret" = UUID yang tampil.
+
+function getProxmoxCfg(name) {
+  return db.prepare('SELECT * FROM proxmox_config WHERE name = ?').get(name);
+}
+
+// Request ke API Proxmox. Pakai modul https (bukan fetch) supaya bisa menerima
+// sertifikat self-signed bawaan Proxmox (rejectUnauthorized: false) HANYA untuk koneksi ini.
+const proxmoxAgent = new (require('https').Agent)({ rejectUnauthorized: false });
+function proxmoxFetch(cfg, apiPath) {
+  return new Promise((resolve, reject) => {
+    const req = require('https').request({
+      host: cfg.host,
+      port: cfg.port || 8006,
+      path: '/api2/json' + apiPath,
+      method: 'GET',
+      agent: proxmoxAgent,
+      timeout: 10000,
+      headers: { Authorization: `PVEAPIToken=${cfg.token_id}=${cfg.token_secret}` },
+    }, (r) => {
+      let data = '';
+      r.on('data', c => data += c);
+      r.on('end', () => {
+        if (r.statusCode < 200 || r.statusCode >= 300) {
+          const hint = r.statusCode === 401 ? ' (token ID/secret salah)'
+                     : r.statusCode === 403 ? ' (token tidak punya izin — beri role PVEAuditor di path /)' : '';
+          return reject(new Error(`Proxmox HTTP ${r.statusCode}${hint}`));
+        }
+        try { resolve(JSON.parse(data).data); }
+        catch (e) { reject(new Error('Respon Proxmox bukan JSON valid')); }
+      });
+    });
+    req.on('timeout', () => req.destroy(new Error('Timeout menghubungi Proxmox (cek IP/port/firewall)')));
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+// --- ADMIN: CRUD Proxmox ---
+app.get('/api/admin/proxmox', requireAuth, (req, res) => {
+  // token_secret sengaja TIDAK dikirim balik ke frontend
+  const list = db.prepare('SELECT name, host, port, token_id FROM proxmox_config').all();
+  res.json(list);
+});
+
+app.post('/api/admin/proxmox', requireAuth, (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ success: false, message: 'Akses ditolak' });
+  const { name, host, port, token_id, token_secret } = req.body;
+  if (!name || !host || !token_id || !token_secret)
+    return res.status(400).json({ success: false, message: 'name, host, token_id, token_secret wajib diisi' });
+  try {
+    db.prepare('INSERT INTO proxmox_config (name, host, port, token_id, token_secret) VALUES (?, ?, ?, ?, ?)')
+      .run(name, host, parseInt(port) || 8006, token_id, token_secret);
+    res.json({ success: true, message: `Proxmox "${name}" berhasil ditambahkan` });
+  } catch (e) {
+    res.status(409).json({ success: false, message: `Proxmox "${name}" sudah ada` });
+  }
+});
+
+app.put('/api/admin/proxmox', requireAuth, (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ success: false, message: 'Akses ditolak' });
+  const { name, host, port, token_id, token_secret } = req.body;
+  const existing = name && getProxmoxCfg(name);
+  if (!existing) return res.status(404).json({ success: false, message: `Proxmox "${name}" tidak ditemukan` });
+  db.prepare('UPDATE proxmox_config SET host=?, port=?, token_id=?, token_secret=? WHERE name=?')
+    .run(
+      host || existing.host,
+      parseInt(port) || existing.port,
+      token_id || existing.token_id,
+      token_secret || existing.token_secret, // kosong = pertahankan secret lama
+      name
+    );
+  res.json({ success: true, message: `Proxmox "${name}" berhasil diperbarui` });
+});
+
+app.delete('/api/admin/proxmox/:name', requireAuth, (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ success: false, message: 'Akses ditolak' });
+  const name = decodeURIComponent(req.params.name);
+  if (!getProxmoxCfg(name))
+    return res.status(404).json({ success: false, message: `Proxmox "${name}" tidak ditemukan` });
+  db.prepare('DELETE FROM proxmox_config WHERE name = ?').run(name);
+  res.json({ success: true, message: `Proxmox "${name}" berhasil dihapus` });
+});
+
+// --- TEST KONEKSI ---
+app.post('/api/proxmox/test', requireAuth, async (req, res) => {
+  const { proxmoxName, host, port, token_id, token_secret } = req.body;
+  const cfg = (proxmoxName && getProxmoxCfg(proxmoxName)) || { host, port, token_id, token_secret };
+  if (!cfg.host || !cfg.token_id || !cfg.token_secret)
+    return res.status(400).json({ success: false, message: 'host, token_id, token_secret wajib diisi' });
+  try {
+    const v = await proxmoxFetch(cfg, '/version');
+    res.json({ success: true, message: `Terhubung! Proxmox VE ${v.version}` });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// --- RESOURCE: ringkasan node + VM/LXC + storage dalam satu panggilan ---
+// Pakai /cluster/resources — satu request sudah memuat semua node, qemu, lxc, storage
+// (cocok juga untuk standalone node tanpa cluster).
+app.get('/api/proxmox/:name/resources', requireAuth, async (req, res) => {
+  const cfg = getProxmoxCfg(req.params.name);
+  if (!cfg) return res.status(404).json({ success: false, message: 'Proxmox tidak ditemukan' });
+  try {
+    const items = (await proxmoxFetch(cfg, '/cluster/resources')) || [];
+    const pct = (used, total) => (total > 0 ? Math.round((used / total) * 1000) / 10 : 0);
+
+    const nodes = items.filter(i => i.type === 'node').map(n => ({
+      node: n.node,
+      online: n.status === 'online',
+      uptime: n.uptime || 0,
+      cpu: Math.round((n.cpu || 0) * 1000) / 10,        // persen
+      cpuCores: n.maxcpu || 0,
+      memUsed: n.mem || 0,
+      memTotal: n.maxmem || 0,
+      memPct: pct(n.mem, n.maxmem),
+      diskUsed: n.disk || 0,
+      diskTotal: n.maxdisk || 0,
+      diskPct: pct(n.disk, n.maxdisk),
+    })).sort((a, b) => a.node.localeCompare(b.node));
+
+    const guests = items.filter(i => i.type === 'qemu' || i.type === 'lxc').map(g => ({
+      vmid: g.vmid,
+      name: g.name || `${g.type}-${g.vmid}`,
+      type: g.type === 'qemu' ? 'VM' : 'LXC',
+      node: g.node,
+      status: g.status,                                  // running / stopped
+      template: !!g.template,
+      uptime: g.uptime || 0,
+      cpu: Math.round((g.cpu || 0) * 1000) / 10,
+      cpuCores: g.maxcpu || 0,
+      memUsed: g.mem || 0,
+      memTotal: g.maxmem || 0,
+      memPct: pct(g.mem, g.maxmem),
+      diskTotal: g.maxdisk || 0,
+      netIn: g.netin || 0,                               // counter byte kumulatif
+      netOut: g.netout || 0,
+    })).filter(g => !g.template).sort((a, b) => a.vmid - b.vmid);
+
+    const storages = items.filter(i => i.type === 'storage').map(s => ({
+      storage: s.storage,
+      node: s.node,
+      shared: !!s.shared,
+      status: s.status,
+      used: s.disk || 0,
+      total: s.maxdisk || 0,
+      pct: pct(s.disk, s.maxdisk),
+    })).sort((a, b) => a.node.localeCompare(b.node) || a.storage.localeCompare(b.storage));
+
+    res.json({
+      success: true,
+      ts: new Date().toISOString(),
+      summary: {
+        nodesOnline: nodes.filter(n => n.online).length,
+        nodesTotal: nodes.length,
+        guestsRunning: guests.filter(g => g.status === 'running').length,
+        guestsTotal: guests.length,
+      },
+      nodes, guests, storages,
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// --- RINGKASAN SEMUA SERVER PROXMOX (untuk kartu node di Dashboard) ---
+// Mengumpulkan node dari semua server yang terdaftar dalam satu panggilan.
+// Cache singkat (10 dtk) supaya refresh dashboard berulang tidak membebani Proxmox.
+let _pveSummaryCache = { ts: 0, data: null };
+app.get('/api/proxmox/summary', requireAuth, async (req, res) => {
+  try {
+    if (_pveSummaryCache.data && Date.now() - _pveSummaryCache.ts < 10000) {
+      return res.json(_pveSummaryCache.data);
+    }
+    const servers = db.prepare('SELECT * FROM proxmox_config').all();
+    const pct = (used, total) => (total > 0 ? Math.round((used / total) * 1000) / 10 : 0);
+
+    const results = await Promise.allSettled(servers.map(async (cfg) => {
+      const items = (await proxmoxFetch(cfg, '/cluster/resources')) || [];
+      const guests = items.filter(i => (i.type === 'qemu' || i.type === 'lxc') && !i.template);
+      const nodes = items.filter(i => i.type === 'node').map(n => {
+        const g = guests.filter(x => x.node === n.node);
+        return {
+          server: cfg.name,
+          node: n.node,
+          online: n.status === 'online',
+          uptime: n.uptime || 0,
+          cpu: Math.round((n.cpu || 0) * 1000) / 10,
+          cpuCores: n.maxcpu || 0,
+          memUsed: n.mem || 0,
+          memTotal: n.maxmem || 0,
+          memPct: pct(n.mem, n.maxmem),
+          diskUsed: n.disk || 0,
+          diskTotal: n.maxdisk || 0,
+          diskPct: pct(n.disk, n.maxdisk),
+          guestsRunning: g.filter(x => x.status === 'running').length,
+          guestsTotal: g.length,
+        };
+      }).sort((a, b) => a.node.localeCompare(b.node));
+      return nodes;
+    }));
+
+    const nodes = [];
+    const errors = [];
+    results.forEach((r, i) => {
+      if (r.status === 'fulfilled') nodes.push(...r.value);
+      else errors.push({ server: servers[i].name, message: r.reason && r.reason.message });
+    });
+
+    const payload = { success: true, ts: new Date().toISOString(), serverCount: servers.length, nodes, errors };
+    _pveSummaryCache = { ts: Date.now(), data: payload };
+    res.json(payload);
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// --- DETAIL SATU NODE (load average, swap, versi kernel, dst) ---
+app.get('/api/proxmox/:name/node/:node/status', requireAuth, async (req, res) => {
+  const cfg = getProxmoxCfg(req.params.name);
+  if (!cfg) return res.status(404).json({ success: false, message: 'Proxmox tidak ditemukan' });
+  // node name dipakai di path URL — batasi karakter supaya tidak bisa nyelipin path lain
+  if (!/^[A-Za-z0-9._-]+$/.test(req.params.node))
+    return res.status(400).json({ success: false, message: 'Nama node tidak valid' });
+  try {
+    const s = await proxmoxFetch(cfg, `/nodes/${req.params.node}/status`);
+    res.json({
+      success: true,
+      node: req.params.node,
+      uptime: s.uptime,
+      cpuPct: Math.round((s.cpu || 0) * 1000) / 10,
+      loadavg: s.loadavg || [],
+      cpuModel: s.cpuinfo?.model || null,
+      cpuCores: s.cpuinfo?.cpus || null,
+      cpuSockets: s.cpuinfo?.sockets || null,
+      mem: s.memory || null,
+      swap: s.swap || null,
+      rootfs: s.rootfs || null,
+      pveVersion: s.pveversion || null,
+      kernel: s.kversion || null,
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// ============================================================
+// END PATCH: Proxmox VE Resource Monitoring
 // ============================================================
 
 // --- PORT ---
