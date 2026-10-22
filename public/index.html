@@ -2553,6 +2553,218 @@
     .bw-speed-val { font-size: 0.85rem; }
     #bw-total-rx, #bw-total-tx { font-size: 0.9rem !important; }
   }
+
+  /* ═══════════════ PROXMOX + AI ASSISTANT (UI modern, rounded) ═══════════════ */
+  #page-proxmox .term-action, #page-ai .term-action {
+    border-radius: 12px; padding: 7px 14px; font-size: 0.68rem; font-weight: 600;
+    transition: all .15s ease;
+  }
+  #page-proxmox .term-action:hover, #page-ai .term-action:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+  #page-proxmox .btn, #pve-modal .btn { border-radius: 12px; }
+  #pve-modal input[type="text"], #pve-modal input[type="password"] { border-radius: 12px; padding: 10px 14px; }
+
+  /* ── Proxmox: toolbar ── */
+  .pve-toolbar { display:flex; align-items:center; gap:10px; margin-bottom:20px; flex-wrap:wrap; }
+  .pve-select-wrap { position:relative; flex:1; min-width:220px; max-width:380px; }
+  .pve-select-wrap svg { position:absolute; left:14px; top:50%; transform:translateY(-50%); color:var(--accent); pointer-events:none; }
+  .pve-select-wrap select {
+    width:100%; background:var(--surface); border:1px solid var(--border); border-radius:14px;
+    padding:11px 14px 11px 42px; color:var(--text); font-family:var(--mono); font-size:0.78rem; cursor:pointer;
+    transition:border-color .15s, box-shadow .15s;
+  }
+  .pve-select-wrap select:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-dim); }
+  .pve-btn-add {
+    display:inline-flex; align-items:center; gap:6px; border:none; cursor:pointer;
+    background:var(--accent); color:var(--btn-primary-text); font-family:var(--mono); font-size:0.7rem; font-weight:700;
+    padding:11px 16px; border-radius:14px; letter-spacing:.03em; transition:transform .15s, box-shadow .15s;
+  }
+  .pve-btn-add:hover { transform:translateY(-1px); box-shadow:0 8px 20px var(--accent-glow); }
+  .pve-btn-del {
+    display:inline-flex; align-items:center; gap:6px; cursor:pointer; background:transparent;
+    border:1px solid var(--border2); color:var(--danger); font-family:var(--mono); font-size:0.7rem; font-weight:600;
+    padding:10px 14px; border-radius:14px; transition:all .15s;
+  }
+  .pve-btn-del:hover { background:rgba(251,113,133,0.1); border-color:var(--danger); }
+  .pve-btn-del:disabled { opacity:.4; cursor:not-allowed; }
+
+  /* ── Proxmox: judul section ── */
+  .pve-section-title {
+    display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;
+    font-family:var(--mono); font-size:0.7rem; color:var(--muted2); letter-spacing:.1em; text-transform:uppercase; margin:6px 0 12px;
+  }
+  .pve-section-title b { color:var(--text); font-weight:700; }
+
+  /* ── Proxmox: stat cards ── */
+  .pve-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:14px; margin-bottom:26px; }
+  .pve-stat {
+    background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:16px 18px;
+    display:flex; align-items:center; gap:14px; box-shadow:0 1px 2px rgba(0,0,0,.05), 0 8px 22px rgba(0,0,0,.12);
+    transition:transform .18s ease, border-color .18s ease;
+  }
+  .pve-stat:hover { transform:translateY(-2px); border-color:var(--border2); }
+  .pve-stat-icon { width:44px; height:44px; border-radius:14px; display:grid; place-items:center; flex:none; background:var(--accent-dim); color:var(--accent); }
+  .pve-stat-icon.ok { background:rgba(52,211,153,.14); color:var(--ok); }
+  .pve-stat-icon.warn { background:rgba(251,191,36,.14); color:var(--warn); }
+  .pve-stat-icon.danger { background:rgba(251,113,133,.14); color:var(--danger); }
+  .pve-stat-label { font-family:var(--mono); font-size:0.6rem; color:var(--muted2); letter-spacing:.1em; text-transform:uppercase; }
+  .pve-stat-val { font-family:var(--mono); font-size:1.45rem; font-weight:700; color:var(--text); line-height:1.2; margin-top:2px; }
+  .pve-stat-sub { font-family:var(--mono); font-size:0.62rem; color:var(--muted2); margin-top:2px; }
+
+  /* ── Proxmox: node cards ── */
+  .pve-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:16px; margin-bottom:28px; }
+  .pve-card {
+    background:var(--surface); border:1px solid var(--border); border-radius:22px; padding:20px 22px;
+    box-shadow:0 1px 2px rgba(0,0,0,.05), 0 10px 26px rgba(0,0,0,.13);
+    transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  }
+  .pve-card:hover { transform:translateY(-3px); border-color:var(--border2); box-shadow:0 16px 36px rgba(0,0,0,.28); }
+  .pve-card.off { border-color:rgba(251,113,133,.45); }
+  .pve-card-head { display:flex; align-items:center; gap:12px; margin-bottom:18px; }
+  .pve-card-ico { width:40px; height:40px; border-radius:13px; background:var(--accent-dim); color:var(--accent); display:grid; place-items:center; flex:none; }
+  .pve-card-name { font-family:var(--mono); font-weight:700; font-size:0.88rem; color:var(--text); }
+  .pve-card-sub { font-family:var(--mono); font-size:0.62rem; color:var(--muted2); margin-top:2px; }
+  .pve-card-head .pve-pill { margin-left:auto; }
+  .pve-metric { margin-bottom:14px; }
+  .pve-metric-head { display:flex; justify-content:space-between; align-items:baseline; font-family:var(--mono); font-size:0.68rem; color:var(--muted2); margin-bottom:6px; }
+  .pve-metric-head b { color:var(--text); font-size:0.8rem; }
+  .pve-metric-sub { font-family:var(--mono); font-size:0.6rem; color:var(--muted2); margin-top:5px; }
+  .pve-foot { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; padding-top:14px; border-top:1px dashed var(--border); }
+  .pve-chip {
+    display:inline-flex; align-items:center; gap:5px; font-family:var(--mono); font-size:0.62rem; color:var(--muted);
+    background:var(--surface2); border:1px solid var(--border); border-radius:999px; padding:4px 10px;
+  }
+
+  /* ── Proxmox: bar & pill ── */
+  .pve-track { height:9px; border-radius:999px; background:var(--surface2); overflow:hidden; box-shadow:inset 0 0 0 1px var(--border); }
+  .pve-fill { height:100%; border-radius:999px; transition:width .5s ease; }
+  .pve-fill.ok { background:linear-gradient(90deg,#10b981,var(--ok)); }
+  .pve-fill.warn { background:linear-gradient(90deg,#f59e0b,var(--warn)); }
+  .pve-fill.err { background:linear-gradient(90deg,#f43f5e,var(--danger)); }
+  .pve-meter { display:flex; align-items:center; gap:9px; }
+  .pve-meter .pve-track { flex:1; min-width:46px; height:7px; }
+  .pve-meter-val { font-family:var(--mono); font-size:0.68rem; color:var(--text); min-width:40px; text-align:right; white-space:nowrap; }
+  .pve-pill {
+    display:inline-flex; align-items:center; gap:6px; font-family:var(--mono); font-size:0.6rem; font-weight:700; letter-spacing:.06em;
+    padding:5px 11px; border-radius:999px; white-space:nowrap;
+  }
+  .pve-pill::before { content:''; width:6px; height:6px; border-radius:50%; background:currentColor; }
+  .pve-pill.ok { color:var(--ok); background:rgba(52,211,153,.12); }
+  .pve-pill.off { color:var(--danger); background:rgba(251,113,133,.12); }
+  .pve-pill.idle { color:var(--muted2); background:var(--surface2); }
+  .pve-pill.ok::before { box-shadow:0 0 0 3px rgba(52,211,153,.2); }
+
+  /* ── Proxmox: tabel VM/LXC ── */
+  .pve-search { position:relative; width:260px; max-width:100%; }
+  .pve-search svg { position:absolute; left:13px; top:50%; transform:translateY(-50%); color:var(--muted2); pointer-events:none; }
+  .pve-search input {
+    width:100%; background:var(--surface); border:1px solid var(--border); border-radius:999px; padding:9px 14px 9px 36px;
+    color:var(--text); font-family:var(--mono); font-size:0.72rem; transition:border-color .15s, box-shadow .15s;
+  }
+  .pve-search input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-dim); }
+  .pve-table-wrap { background:var(--surface); border:1px solid var(--border); border-radius:22px; overflow:hidden; margin-bottom:28px; box-shadow:0 10px 26px rgba(0,0,0,.12); }
+  .pve-table-scroll { overflow-x:auto; }
+  .pve-table { width:100%; border-collapse:collapse; font-family:var(--mono); font-size:0.72rem; min-width:780px; }
+  .pve-table th { text-align:left; padding:13px 16px; color:var(--muted2); font-size:0.6rem; letter-spacing:.1em; font-weight:700; background:var(--surface2); }
+  .pve-table td { padding:12px 16px; border-top:1px solid var(--border); color:var(--text); }
+  .pve-table tbody tr { transition:background .12s; }
+  .pve-table tbody tr:hover { background:var(--accent-dim); }
+  .pve-table tr.stopped td { opacity:.55; }
+  .pve-vmid { color:var(--accent); font-weight:700; }
+  .pve-type { font-size:0.6rem; font-weight:700; padding:3px 9px; border-radius:8px; background:var(--surface2); border:1px solid var(--border); color:var(--muted); }
+  .pve-empty { padding:28px; text-align:center; color:var(--muted2); font-family:var(--mono); font-size:0.72rem; }
+
+  /* ── Proxmox: storage ── */
+  .pve-st-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+  .pve-st-name { font-family:var(--mono); font-weight:700; font-size:0.82rem; display:flex; align-items:center; gap:8px; }
+  .pve-st-pct { font-family:var(--mono); font-size:1.15rem; font-weight:700; }
+  .pve-error { display:none; margin-bottom:16px; padding:12px 16px; background:rgba(251,113,133,.1); border:1px solid rgba(251,113,133,.35); border-radius:16px; font-family:var(--mono); font-size:0.72rem; color:var(--danger); }
+
+  /* ── Proxmox: modal ── */
+  .pve-modal-box { background:var(--surface); border:1px solid var(--border2); border-radius:24px; width:460px; max-width:95vw; padding:28px; box-shadow:0 30px 80px rgba(0,0,0,.5); }
+  .pve-modal-title { display:flex; align-items:center; gap:12px; font-family:var(--mono); font-size:0.85rem; font-weight:700; color:var(--text); margin-bottom:20px; }
+  .pve-modal-title span.ico { width:38px; height:38px; border-radius:12px; background:var(--accent-dim); color:var(--accent); display:grid; place-items:center; }
+  .pve-modal-msg { display:none; padding:10px 14px; border-radius:14px; font-family:var(--mono); font-size:0.72rem; }
+
+  /* ═══════════════ AI ASSISTANT ═══════════════ */
+  .ai-wrap { flex:1; min-height:0; display:flex; flex-direction:column; width:100%; max-width:900px; margin:0 auto; padding:0 20px 16px; }
+  .ai-note { display:none; margin-top:14px; padding:12px 16px; background:rgba(251,191,36,.1); border:1px solid rgba(251,191,36,.35); border-radius:16px; font-family:var(--mono); font-size:0.72rem; color:var(--warn); }
+  .ai-scroll { flex:1; min-height:0; overflow-y:auto; padding:20px 4px 10px; scroll-behavior:smooth; scrollbar-width:thin; scrollbar-color:var(--border2) transparent; }
+  .ai-thread { display:flex; flex-direction:column; gap:22px; }
+
+  .ai-welcome { text-align:center; padding:34px 10px 10px; }
+  .ai-orb {
+    width:68px; height:68px; margin:0 auto 18px; border-radius:22px; display:grid; place-items:center; color:var(--btn-primary-text);
+    background:linear-gradient(135deg,var(--accent),var(--info) 60%,#818cf8); box-shadow:0 14px 34px var(--accent-glow);
+    animation:aiFloat 4s ease-in-out infinite;
+  }
+  @keyframes aiFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+  .ai-welcome h2 { font-family:var(--sans); font-size:1.5rem; font-weight:700; color:var(--text); margin:0 0 8px; letter-spacing:-.01em; }
+  .ai-welcome p { font-family:var(--sans); font-size:0.88rem; color:var(--muted); margin:0 auto; max-width:480px; line-height:1.6; }
+  .ai-suggest-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:12px; margin-top:28px; text-align:left; }
+  .ai-suggest {
+    display:flex; align-items:flex-start; gap:12px; background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:14px 16px;
+    cursor:pointer; text-align:left; color:var(--text); transition:transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+  }
+  .ai-suggest:hover { transform:translateY(-2px); border-color:var(--accent); box-shadow:0 10px 26px var(--accent-dim); }
+  .ai-suggest-ico { width:34px; height:34px; border-radius:11px; flex:none; display:grid; place-items:center; background:var(--accent-dim); color:var(--accent); }
+  .ai-suggest-t { font-family:var(--sans); font-size:0.8rem; font-weight:600; line-height:1.4; }
+  .ai-suggest-s { font-family:var(--mono); font-size:0.62rem; color:var(--muted2); margin-top:3px; }
+
+  .ai-msg { display:flex; gap:12px; max-width:100%; animation:aiIn .25s ease both; }
+  @keyframes aiIn { from{opacity:0; transform:translateY(8px)} to{opacity:1; transform:none} }
+  .ai-msg.user { flex-direction:row-reverse; }
+  .ai-avatar { width:34px; height:34px; border-radius:12px; flex:none; display:grid; place-items:center; margin-top:2px; }
+  .ai-msg.bot .ai-avatar { background:linear-gradient(135deg,var(--accent),var(--info) 60%,#818cf8); color:var(--btn-primary-text); }
+  .ai-msg.user .ai-avatar { display:none; }
+  .ai-col { display:flex; flex-direction:column; min-width:0; max-width:min(720px,86%); }
+  .ai-msg.user .ai-col { align-items:flex-end; }
+  .ai-bubble { font-family:var(--sans); font-size:0.88rem; line-height:1.7; word-break:break-word; }
+  .ai-msg.bot .ai-bubble { background:var(--surface); border:1px solid var(--border); border-radius:6px 20px 20px 20px; padding:13px 18px; color:var(--text); box-shadow:0 4px 16px rgba(0,0,0,.08); }
+  .ai-msg.user .ai-bubble { background:linear-gradient(135deg,var(--accent),var(--info)); color:var(--btn-primary-text); border-radius:20px 20px 6px 20px; padding:11px 18px; font-weight:500; white-space:pre-wrap; box-shadow:0 8px 22px var(--accent-glow); }
+  .ai-msg.err .ai-bubble { border-color:rgba(251,113,133,.45); background:rgba(251,113,133,.08); color:var(--danger); }
+  .ai-bubble b { color:var(--accent); font-weight:700; }
+  .ai-bubble code { font-family:var(--mono); font-size:0.78rem; background:var(--surface2); border:1px solid var(--border); border-radius:7px; padding:1px 7px; }
+  .ai-bubble pre { font-family:var(--mono); font-size:0.76rem; white-space:pre-wrap; background:var(--bg); border:1px solid var(--border); border-radius:14px; padding:12px 14px; margin:8px 0; overflow-x:auto; }
+  .ai-meta { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:8px; }
+  .ai-chip { font-family:var(--mono); font-size:0.58rem; color:var(--muted); background:var(--surface2); border:1px solid var(--border); border-radius:999px; padding:3px 10px; }
+  .ai-chip.warn { color:var(--warn); border-color:rgba(251,191,36,.4); }
+  .ai-copy { margin-left:auto; display:inline-flex; align-items:center; gap:5px; font-family:var(--mono); font-size:0.58rem; color:var(--muted2); background:none; border:none; cursor:pointer; padding:3px 8px; border-radius:999px; opacity:0; transition:all .15s; }
+  .ai-msg:hover .ai-copy, .ai-copy:focus { opacity:1; }
+  .ai-copy:hover { color:var(--accent); background:var(--accent-dim); }
+
+  .ai-typing { display:inline-flex; align-items:center; gap:10px; font-family:var(--mono); font-size:0.7rem; color:var(--muted); }
+  .ai-dots { display:inline-flex; gap:5px; }
+  .ai-dots i { width:7px; height:7px; border-radius:50%; background:var(--accent); animation:aiDot 1.2s infinite ease-in-out; }
+  .ai-dots i:nth-child(2){ animation-delay:.15s } .ai-dots i:nth-child(3){ animation-delay:.3s }
+  @keyframes aiDot { 0%,80%,100%{transform:scale(.55); opacity:.4} 40%{transform:scale(1); opacity:1} }
+
+  .ai-composer-wrap { padding-top:6px; }
+  .ai-composer {
+    display:flex; align-items:flex-end; gap:10px; background:var(--surface); border:1px solid var(--border2); border-radius:26px; padding:9px 9px 9px 20px;
+    box-shadow:0 10px 30px rgba(0,0,0,.18); transition:border-color .15s, box-shadow .15s;
+  }
+  .ai-composer:focus-within { border-color:var(--accent); box-shadow:0 0 0 4px var(--accent-dim), 0 10px 30px rgba(0,0,0,.18); }
+  .ai-composer textarea {
+    flex:1; resize:none; border:none; outline:none; background:transparent; color:var(--text); font-family:var(--sans); font-size:0.9rem; line-height:1.5;
+    padding:9px 0; max-height:160px; min-height:24px;
+  }
+  .ai-composer textarea::placeholder { color:var(--muted2); }
+  .ai-send {
+    width:42px; height:42px; border-radius:50%; border:none; cursor:pointer; flex:none; display:grid; place-items:center;
+    background:linear-gradient(135deg,var(--accent),var(--info)); color:var(--btn-primary-text); transition:transform .15s, box-shadow .15s, opacity .15s;
+  }
+  .ai-send:hover:not(:disabled) { transform:scale(1.07); box-shadow:0 8px 20px var(--accent-glow); }
+  .ai-send:disabled { opacity:.45; cursor:not-allowed; }
+  .ai-foot { text-align:center; font-family:var(--mono); font-size:0.58rem; color:var(--muted); margin-top:10px; line-height:1.5; }
+
+  @media (max-width: 768px) {
+    .pve-grid { grid-template-columns:1fr; }
+    .pve-card, .pve-stat { border-radius:18px; }
+    .ai-wrap { padding:0 12px 12px; }
+    .ai-col { max-width:92%; }
+    .ai-avatar { display:none; }
+    .ai-welcome h2 { font-size:1.25rem; }
+  }
 </style>
 
 <style>
@@ -3691,7 +3903,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <span class="page-badge">RESOURCE</span>
           </div>
         </div>
-        <div style="display:flex;gap:8px;align-items:center;">
+        <div style="display:flex;gap:10px;align-items:center;">
           <span id="pve-updated" style="font-family:var(--mono);font-size:0.65rem;color:var(--muted2);"></span>
           <button class="term-action" onclick="loadProxmoxResources()" id="pve-refresh-btn">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
@@ -3700,41 +3912,51 @@ document.addEventListener('DOMContentLoaded', function() {
         </div>
       </div>
 
-      <div style="flex:1;overflow-y:auto;padding:16px 20px;scrollbar-width:thin;scrollbar-color:var(--border2) transparent;" id="pve-body">
-        <div id="pve-error" style="display:none;margin-bottom:16px;padding:10px 14px;background:rgba(255,77,106,0.1);border:1px solid rgba(255,77,106,0.3);border-radius:8px;font-family:var(--mono);font-size:0.72rem;color:var(--danger);"></div>
+      <div style="flex:1;overflow-y:auto;padding:20px 24px;scrollbar-width:thin;scrollbar-color:var(--border2) transparent;" id="pve-body">
+        <div id="pve-error" class="pve-error"></div>
 
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap;">
-          <select id="pve-server-select" onchange="pveOnServerSelect()" style="flex:1;min-width:200px;max-width:340px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-family:var(--mono);font-size:0.78rem;">
-            <option value="">Memuat...</option>
-          </select>
-          <button class="btn btn-primary" style="font-size:0.68rem;padding:7px 12px;" onclick="openProxmoxModal()">+ SERVER</button>
-          <button class="btn btn-ghost" style="font-size:0.68rem;padding:7px 12px;color:var(--danger);" onclick="deleteProxmoxServer()" id="pve-del-btn">HAPUS</button>
+        <div class="pve-toolbar">
+          <div class="pve-select-wrap">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="6" rx="2"/><rect x="2" y="13" width="20" height="6" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="16" x2="6.01" y2="16"/></svg>
+            <select id="pve-server-select" onchange="pveOnServerSelect()"><option value="">Memuat...</option></select>
+          </div>
+          <button class="pve-btn-add" onclick="openProxmoxModal()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            SERVER
+          </button>
+          <button class="pve-btn-del" onclick="deleteProxmoxServer()" id="pve-del-btn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+            HAPUS
+          </button>
         </div>
 
-        <div id="pve-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:20px;"></div>
+        <div id="pve-summary" class="pve-stats"></div>
 
-        <div style="font-family:var(--mono);font-size:0.68rem;color:var(--muted2);letter-spacing:0.08em;margin-bottom:10px;">NODE</div>
-        <div id="pve-nodes" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:24px;">
-          <div style="padding:20px;color:var(--muted2);font-family:var(--mono);font-size:0.72rem;">Pilih atau tambah server Proxmox.</div>
+        <div class="pve-section-title"><span>Node</span></div>
+        <div id="pve-nodes" class="pve-grid">
+          <div class="pve-empty" style="grid-column:1/-1;">Pilih atau tambah server Proxmox.</div>
         </div>
 
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:10px;flex-wrap:wrap;">
-          <div style="font-family:var(--mono);font-size:0.68rem;color:var(--muted2);letter-spacing:0.08em;">VM &amp; LXC</div>
-          <input type="text" id="pve-guest-filter" oninput="renderPveGuests()" placeholder="Cari nama / VMID..." style="width:220px;max-width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-family:var(--mono);font-size:0.72rem;">
+        <div class="pve-section-title">
+          <span>VM &amp; LXC <b id="pve-guest-count"></b></span>
+          <div class="pve-search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="pve-guest-filter" oninput="renderPveGuests()" placeholder="Cari nama / VMID...">
+          </div>
         </div>
-        <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow-x:auto;margin-bottom:24px;">
-          <table style="width:100%;border-collapse:collapse;font-family:var(--mono);font-size:0.72rem;min-width:760px;">
-            <thead>
-              <tr style="color:var(--muted2);text-align:left;border-bottom:1px solid var(--border);">
-                <th style="padding:9px 12px;">VMID</th><th style="padding:9px 12px;">NAMA</th><th style="padding:9px 12px;">TIPE</th><th style="padding:9px 12px;">NODE</th><th style="padding:9px 12px;">STATUS</th><th style="padding:9px 12px;min-width:120px;">CPU</th><th style="padding:9px 12px;min-width:150px;">RAM</th><th style="padding:9px 12px;">UPTIME</th>
-              </tr>
-            </thead>
-            <tbody id="pve-guests-body"></tbody>
-          </table>
+        <div class="pve-table-wrap">
+          <div class="pve-table-scroll">
+            <table class="pve-table">
+              <thead>
+                <tr><th>VMID</th><th>NAMA</th><th>TIPE</th><th>NODE</th><th>STATUS</th><th style="min-width:130px;">CPU</th><th style="min-width:170px;">RAM</th><th>UPTIME</th></tr>
+              </thead>
+              <tbody id="pve-guests-body"></tbody>
+            </table>
+          </div>
         </div>
 
-        <div style="font-family:var(--mono);font-size:0.68rem;color:var(--muted2);letter-spacing:0.08em;margin-bottom:10px;">STORAGE</div>
-        <div id="pve-storages" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-bottom:10px;"></div>
+        <div class="pve-section-title"><span>Storage</span></div>
+        <div id="pve-storages" class="pve-grid" style="grid-template-columns:repeat(auto-fill,minmax(270px,1fr));"></div>
       </div>
     </div><!-- /page-proxmox -->
 
@@ -3747,29 +3969,39 @@ document.addEventListener('DOMContentLoaded', function() {
             <span class="page-badge">NOC</span>
           </div>
         </div>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <span id="ai-model-label" style="font-family:var(--mono);font-size:0.65rem;color:var(--muted2);"></span>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <span id="ai-model-label" class="ai-chip"></span>
           <button class="term-action" onclick="aiClearChat()">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             CHAT BARU
           </button>
         </div>
       </div>
 
-      <div style="flex:1;display:flex;flex-direction:column;min-height:0;padding:16px 20px;gap:12px;">
-        <div id="ai-disabled-note" style="display:none;padding:10px 14px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.35);border-radius:8px;font-family:var(--mono);font-size:0.72rem;color:var(--warn);"></div>
+      <div class="ai-wrap">
+        <div id="ai-disabled-note" class="ai-note"></div>
 
-        <div id="ai-messages" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding-right:4px;scrollbar-width:thin;scrollbar-color:var(--border2) transparent;"></div>
-
-        <div id="ai-suggestions" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
-
-        <div style="display:flex;gap:10px;align-items:flex-end;">
-          <textarea id="ai-input" rows="2" placeholder="Tanya apa saja soal ONU, OLT, atau Proxmox… (Enter kirim, Shift+Enter baris baru)"
-            onkeydown="aiInputKey(event)"
-            style="flex:1;resize:none;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-family:var(--mono);font-size:0.78rem;line-height:1.5;"></textarea>
-          <button class="btn btn-primary" id="ai-send-btn" onclick="aiSend()" style="height:44px;padding:0 20px;">Kirim</button>
+        <div class="ai-scroll" id="ai-scroll">
+          <div class="ai-welcome" id="ai-welcome">
+            <div class="ai-orb">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z" opacity=".75"/></svg>
+            </div>
+            <h2>Apa yang ingin Anda cek?</h2>
+            <p>Saya bisa membaca data ONU, kesehatan OLT, dan resource Proxmox untuk membantu analisis jaringan Anda.</p>
+            <div class="ai-suggest-grid" id="ai-suggestions"></div>
+          </div>
+          <div class="ai-thread" id="ai-messages"></div>
         </div>
-        <div style="font-family:var(--mono);font-size:0.62rem;color:var(--muted);">AI hanya membaca data (tidak bisa mengubah konfigurasi). Data ONU berasal dari cache polling ±1 menit. Nama pelanggan &amp; SN yang relevan dengan pertanyaan dikirim ke penyedia AI (<span id="ai-provider-label">—</span>).</div>
+
+        <div class="ai-composer-wrap">
+          <div class="ai-composer">
+            <textarea id="ai-input" rows="1" placeholder="Tanya soal ONU, OLT, atau Proxmox…" onkeydown="aiInputKey(event)" oninput="aiAutosize()"></textarea>
+            <button class="ai-send" id="ai-send-btn" onclick="aiSend()" title="Kirim (Enter)">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+            </button>
+          </div>
+          <div class="ai-foot">AI hanya membaca data, tidak bisa mengubah konfigurasi · Data ONU dari cache polling ±1 menit · Nama pelanggan &amp; SN yang relevan dikirim ke penyedia AI (<span id="ai-provider-label">—</span>)</div>
+        </div>
       </div>
     </div><!-- /page-ai -->
 
@@ -3960,19 +4192,24 @@ document.addEventListener('DOMContentLoaded', function() {
 </div>
 
 <!-- MODAL: Tambah Server Proxmox -->
-<div id="pve-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;align-items:center;justify-content:center;">
-  <div style="background:var(--surface);border:1px solid var(--border2);border-radius:12px;width:440px;max-width:95vw;padding:24px;">
-    <div style="font-family:var(--mono);font-size:0.8rem;font-weight:700;color:var(--accent);letter-spacing:0.06em;margin-bottom:18px;">TAMBAH SERVER PROXMOX</div>
-    <div style="display:flex;flex-direction:column;gap:12px;">
+<div id="pve-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);z-index:9999;align-items:center;justify-content:center;">
+  <div class="pve-modal-box">
+    <div class="pve-modal-title">
+      <span class="ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="6" rx="2"/><rect x="2" y="13" width="20" height="6" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="16" x2="6.01" y2="16"/></svg></span>
+      TAMBAH SERVER PROXMOX
+    </div>
+    <div style="display:flex;flex-direction:column;gap:13px;">
       <div><label>Nama *</label><input type="text" id="pve-f-name" placeholder="misal: PVE-DEMPET"></div>
-      <div><label>Host / IP *</label><input type="text" id="pve-f-host" placeholder="192.168.11.10"></div>
-      <div><label>Port</label><input type="text" id="pve-f-port" placeholder="8006 (default)"></div>
+      <div style="display:grid;grid-template-columns:1fr 110px;gap:10px;">
+        <div><label>Host / IP *</label><input type="text" id="pve-f-host" placeholder="192.168.11.10"></div>
+        <div><label>Port</label><input type="text" id="pve-f-port" placeholder="8006"></div>
+      </div>
       <div><label>Token ID *</label><input type="text" id="pve-f-tokenid" placeholder="monitor@pve!nocs"></div>
       <div><label>Token Secret *</label><input type="password" id="pve-f-secret" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="new-password"></div>
-      <div style="font-family:var(--mono);font-size:0.65rem;color:var(--muted2);">Buat di Proxmox: Datacenter → Permissions → API Tokens (matikan Privilege Separation), lalu beri user role <b>PVEAuditor</b> di path <b>/</b> (read-only).</div>
-      <div id="pve-f-msg" style="display:none;padding:8px 12px;background:rgba(255,77,106,0.1);border:1px solid rgba(255,77,106,0.3);border-radius:6px;font-family:var(--mono);font-size:0.72rem;color:var(--danger);"></div>
+      <div style="font-family:var(--mono);font-size:0.64rem;color:var(--muted2);line-height:1.6;background:var(--surface2);border:1px solid var(--border);border-radius:14px;padding:10px 14px;">Buat di Proxmox: Datacenter → Permissions → API Tokens (matikan Privilege Separation), lalu beri user role <b>PVEAuditor</b> di path <b>/</b> (read-only).</div>
+      <div id="pve-f-msg" class="pve-modal-msg"></div>
     </div>
-    <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
+    <div style="display:flex;gap:10px;margin-top:22px;justify-content:flex-end;">
       <button class="btn btn-ghost" onclick="closeProxmoxModal()">Batal</button>
       <button class="btn btn-ghost" onclick="testProxmoxForm()" style="color:var(--info);border-color:rgba(77,184,255,0.3);">Test Koneksi</button>
       <button class="btn btn-primary" onclick="submitProxmox()">Simpan</button>
@@ -4897,6 +5134,7 @@ document.addEventListener('DOMContentLoaded', function() {
       if (!Array.isArray(pveServers)) pveServers = [];
       const badge = document.getElementById('sb-proxmox-count');
       if (badge) badge.textContent = pveServers.length || '—';
+      document.getElementById('pve-del-btn').disabled = !pveServers.length;
       if (!pveServers.length) {
         sel.innerHTML = '<option value="">Belum ada server Proxmox</option>';
         pveSelected = null;
@@ -4924,14 +5162,15 @@ document.addEventListener('DOMContentLoaded', function() {
     const el = document.getElementById('pve-error');
     if (!msg) { el.style.display = 'none'; return; }
     el.textContent = msg;
-    el.style.display = '';
+    el.style.display = 'block';
   }
 
   function renderPveEmpty() {
     document.getElementById('pve-summary').innerHTML = '';
-    document.getElementById('pve-nodes').innerHTML = '<div style="padding:20px;color:var(--muted2);font-family:var(--mono);font-size:0.72rem;">Klik “+ SERVER” untuk menambahkan Proxmox.</div>';
+    document.getElementById('pve-nodes').innerHTML = '<div class="pve-empty" style="grid-column:1/-1;">Klik “+ SERVER” untuk menambahkan Proxmox.</div>';
     document.getElementById('pve-guests-body').innerHTML = '';
     document.getElementById('pve-storages').innerHTML = '';
+    document.getElementById('pve-guest-count').textContent = '';
   }
 
   async function loadProxmoxResources(silent) {
@@ -4953,19 +5192,15 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
-  function pveColor(pct) {
-    if (pct >= 85) return 'var(--danger)';
-    if (pct >= 70) return 'var(--warn)';
-    return 'var(--ok)';
+  function pveCls(pct) { return pct >= 85 ? 'err' : pct >= 70 ? 'warn' : 'ok'; }
+  function pveColor(pct) { return pct >= 85 ? 'var(--danger)' : pct >= 70 ? 'var(--warn)' : 'var(--ok)'; }
+  function pveTrack(pct) {
+    const p = Math.max(0, Math.min(100, Number(pct) || 0));
+    return `<div class="pve-track"><div class="pve-fill ${pveCls(p)}" style="width:${p}%"></div></div>`;
   }
   function pveBar(pct, label) {
     const p = Math.max(0, Math.min(100, Number(pct) || 0));
-    return `<div style="display:flex;align-items:center;gap:8px;">
-      <div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden;min-width:50px;">
-        <div style="width:${p}%;height:100%;background:${pveColor(p)};"></div>
-      </div>
-      <span style="min-width:${label ? 'auto' : '38px'};color:var(--text);">${label || p.toFixed(1) + '%'}</span>
-    </div>`;
+    return `<div class="pve-meter">${pveTrack(p)}<span class="pve-meter-val">${label || p.toFixed(1) + '%'}</span></div>`;
   }
   function pveBytes(b) {
     b = Number(b) || 0;
@@ -4982,71 +5217,96 @@ document.addEventListener('DOMContentLoaded', function() {
     if (h > 0) return `${h}h ${m}m`;
     return `${m}m`;
   }
+  function pveMetric(label, valText, pct, sub) {
+    return `<div class="pve-metric">
+      <div class="pve-metric-head"><span>${label}</span><b>${valText}</b></div>
+      ${pveTrack(pct)}
+      ${sub ? `<div class="pve-metric-sub">${sub}</div>` : ''}
+    </div>`;
+  }
+
+  const PVE_ICON = {
+    node: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="6" rx="2"/><rect x="2" y="13" width="20" height="6" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="16" x2="6.01" y2="16"/></svg>',
+    vm: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><line x1="8" y1="20" x2="16" y2="20"/><line x1="12" y1="16" x2="12" y2="20"/></svg>',
+    cpu: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="3"/><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>',
+    ram: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="10" rx="2"/><path d="M6 11v2M10 11v2M14 11v2M18 11v2"/></svg>',
+    disk: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></svg>',
+  };
 
   function renderPveAll() {
     if (!pveData) return;
     const s = pveData.summary;
-    const runningPct = s.guestsTotal ? (s.guestsRunning / s.guestsTotal) * 100 : 0;
-    const card = (label, value, sub, color) => `
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;">
-        <div style="font-family:var(--mono);font-size:0.62rem;color:var(--muted2);letter-spacing:0.08em;">${label}</div>
-        <div style="font-family:var(--mono);font-size:1.3rem;font-weight:700;color:${color || 'var(--text)'};margin-top:4px;">${value}</div>
-        <div style="font-family:var(--mono);font-size:0.62rem;color:var(--muted2);margin-top:2px;">${sub}</div>
+    const online = pveData.nodes.filter(n => n.online);
+    const avgCpu = online.length ? online.reduce((a, n) => a + n.cpu, 0) / online.length : 0;
+    const memUsed = online.reduce((a, n) => a + n.memUsed, 0);
+    const memTotal = online.reduce((a, n) => a + n.memTotal, 0);
+    const memPct = memTotal ? (memUsed / memTotal) * 100 : 0;
+    const allUp = s.nodesOnline === s.nodesTotal;
+
+    const stat = (icon, tone, label, val, sub) => `
+      <div class="pve-stat">
+        <div class="pve-stat-icon ${tone}">${icon}</div>
+        <div><div class="pve-stat-label">${label}</div><div class="pve-stat-val">${val}</div><div class="pve-stat-sub">${sub}</div></div>
       </div>`;
-    const allNodesUp = s.nodesOnline === s.nodesTotal;
     document.getElementById('pve-summary').innerHTML =
-      card('NODE ONLINE', `${s.nodesOnline}/${s.nodesTotal}`, allNodesUp ? 'semua normal' : 'ada node offline', allNodesUp ? 'var(--ok)' : 'var(--danger)') +
-      card('VM / LXC RUNNING', `${s.guestsRunning}/${s.guestsTotal}`, `${Math.round(runningPct)}% menyala`, 'var(--accent)');
+      stat(PVE_ICON.node, allUp ? 'ok' : 'danger', 'Node Online', `${s.nodesOnline}/${s.nodesTotal}`, allUp ? 'semua normal' : 'ada node offline') +
+      stat(PVE_ICON.vm, '', 'VM / LXC Running', `${s.guestsRunning}/${s.guestsTotal}`, `${s.guestsTotal - s.guestsRunning} berhenti`) +
+      stat(PVE_ICON.cpu, avgCpu >= 85 ? 'danger' : avgCpu >= 70 ? 'warn' : 'ok', 'Rata-rata CPU', avgCpu.toFixed(1) + '%', 'semua node online') +
+      stat(PVE_ICON.ram, memPct >= 85 ? 'danger' : memPct >= 70 ? 'warn' : 'ok', 'RAM Terpakai', memPct.toFixed(1) + '%', `${pveBytes(memUsed)} / ${pveBytes(memTotal)}`);
 
     document.getElementById('pve-nodes').innerHTML = pveData.nodes.map(n => `
-      <div style="background:var(--surface);border:1px solid ${n.online ? 'var(--border)' : 'rgba(255,77,106,0.4)'};border-radius:8px;padding:14px;font-family:var(--mono);font-size:0.72rem;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-          <span style="font-weight:700;color:var(--accent);font-size:0.8rem;">${escHtml(n.node)}</span>
-          <span style="color:${n.online ? 'var(--ok)' : 'var(--danger)'};font-weight:700;">${n.online ? '● ONLINE' : '● OFFLINE'}</span>
+      <div class="pve-card ${n.online ? '' : 'off'}">
+        <div class="pve-card-head">
+          <div class="pve-card-ico">${PVE_ICON.node}</div>
+          <div><div class="pve-card-name">${escHtml(n.node)}</div><div class="pve-card-sub">${n.cpuCores} core · uptime ${pveUptime(n.uptime)}</div></div>
+          <span class="pve-pill ${n.online ? 'ok' : 'off'}">${n.online ? 'ONLINE' : 'OFFLINE'}</span>
         </div>
-        <div style="display:flex;flex-direction:column;gap:9px;">
-          <div><div style="color:var(--muted2);margin-bottom:3px;">CPU · ${n.cpuCores} core</div>${pveBar(n.cpu)}</div>
-          <div><div style="color:var(--muted2);margin-bottom:3px;">RAM · ${pveBytes(n.memUsed)} / ${pveBytes(n.memTotal)}</div>${pveBar(n.memPct)}</div>
-          <div><div style="color:var(--muted2);margin-bottom:3px;">Disk root · ${pveBytes(n.diskUsed)} / ${pveBytes(n.diskTotal)}</div>${pveBar(n.diskPct)}</div>
-        </div>
-        <div style="margin-top:10px;color:var(--muted2);">Uptime ${pveUptime(n.uptime)}</div>
-      </div>`).join('') || '<div style="padding:20px;color:var(--muted2);">Tidak ada node.</div>';
+        ${pveMetric('CPU', n.cpu.toFixed(1) + '%', n.cpu)}
+        ${pveMetric('RAM', n.memPct.toFixed(1) + '%', n.memPct, `${pveBytes(n.memUsed)} / ${pveBytes(n.memTotal)}`)}
+        ${pveMetric('Disk root', n.diskPct.toFixed(1) + '%', n.diskPct, `${pveBytes(n.diskUsed)} / ${pveBytes(n.diskTotal)}`)}
+      </div>`).join('') || '<div class="pve-empty" style="grid-column:1/-1;">Tidak ada node.</div>';
 
     renderPveGuests();
 
     document.getElementById('pve-storages').innerHTML = pveData.storages.map(st => `
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;font-family:var(--mono);font-size:0.72rem;">
-        <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
-          <span style="font-weight:700;color:var(--text);">${escHtml(st.storage)}</span>
-          <span style="color:var(--muted2);">${escHtml(st.node)}${st.shared ? ' · shared' : ''}</span>
+      <div class="pve-card" style="padding:16px 18px;">
+        <div class="pve-st-head">
+          <span class="pve-st-name"><span style="color:var(--accent);display:grid;">${PVE_ICON.disk}</span>${escHtml(st.storage)}</span>
+          <span class="pve-st-pct" style="color:${pveColor(st.pct)};">${st.pct.toFixed(0)}%</span>
         </div>
-        ${pveBar(st.pct)}
-        <div style="margin-top:6px;color:var(--muted2);">${pveBytes(st.used)} / ${pveBytes(st.total)}</div>
-      </div>`).join('') || '<div style="padding:10px;color:var(--muted2);font-family:var(--mono);font-size:0.72rem;">Tidak ada storage.</div>';
+        ${pveTrack(st.pct)}
+        <div class="pve-foot" style="margin-top:12px;padding-top:12px;">
+          <span class="pve-chip">${pveBytes(st.used)} / ${pveBytes(st.total)}</span>
+          <span class="pve-chip">${escHtml(st.node)}</span>
+          ${st.shared ? '<span class="pve-chip">shared</span>' : ''}
+        </div>
+      </div>`).join('') || '<div class="pve-empty" style="grid-column:1/-1;">Tidak ada storage.</div>';
   }
 
   function renderPveGuests() {
     const body = document.getElementById('pve-guests-body');
-    if (!pveData) { body.innerHTML = ''; return; }
+    const cnt = document.getElementById('pve-guest-count');
+    if (!pveData) { body.innerHTML = ''; cnt.textContent = ''; return; }
     const q = (document.getElementById('pve-guest-filter').value || '').trim().toLowerCase();
     const list = pveData.guests.filter(g => !q || String(g.vmid).includes(q) || g.name.toLowerCase().includes(q));
     // running di atas, lalu urut VMID
     list.sort((a, b) => (b.status === 'running') - (a.status === 'running') || a.vmid - b.vmid);
+    cnt.textContent = `· ${list.length}`;
     if (!list.length) {
-      body.innerHTML = '<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--muted2);">Tidak ada VM/LXC.</td></tr>';
+      body.innerHTML = '<tr><td colspan="8" class="pve-empty">Tidak ada VM/LXC.</td></tr>';
       return;
     }
     body.innerHTML = list.map(g => {
       const running = g.status === 'running';
-      return `<tr style="border-bottom:1px solid var(--border);${running ? '' : 'opacity:0.55;'}">
-        <td style="padding:8px 12px;color:var(--accent);">${g.vmid}</td>
-        <td style="padding:8px 12px;color:var(--text);">${escHtml(g.name)}</td>
-        <td style="padding:8px 12px;color:var(--muted2);">${g.type}</td>
-        <td style="padding:8px 12px;color:var(--muted2);">${escHtml(g.node)}</td>
-        <td style="padding:8px 12px;color:${running ? 'var(--ok)' : 'var(--danger)'};font-weight:700;">${running ? 'RUNNING' : escHtml(String(g.status || '').toUpperCase())}</td>
-        <td style="padding:8px 12px;">${running ? pveBar(g.cpu) : '—'}</td>
-        <td style="padding:8px 12px;">${running ? pveBar(g.memPct, `${pveBytes(g.memUsed)} / ${pveBytes(g.memTotal)}`) : '—'}</td>
-        <td style="padding:8px 12px;color:var(--muted2);">${running ? pveUptime(g.uptime) : '—'}</td>
+      return `<tr class="${running ? '' : 'stopped'}">
+        <td class="pve-vmid">${g.vmid}</td>
+        <td>${escHtml(g.name)}</td>
+        <td><span class="pve-type">${g.type}</span></td>
+        <td style="color:var(--muted);">${escHtml(g.node)}</td>
+        <td><span class="pve-pill ${running ? 'ok' : 'idle'}">${running ? 'RUNNING' : escHtml(String(g.status || '').toUpperCase())}</span></td>
+        <td>${running ? pveBar(g.cpu) : '<span style="color:var(--muted2);">—</span>'}</td>
+        <td>${running ? pveBar(g.memPct, `${pveBytes(g.memUsed)} / ${pveBytes(g.memTotal)}`) : '<span style="color:var(--muted2);">—</span>'}</td>
+        <td style="color:var(--muted);">${running ? pveUptime(g.uptime) : '—'}</td>
       </tr>`;
     }).join('');
   }
@@ -5071,10 +5331,10 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   function pveFormMsg(text, ok) {
     const el = document.getElementById('pve-f-msg');
-    el.style.display = '';
+    el.style.display = 'block';
     el.textContent = (ok ? '✓ ' : '') + text;
-    el.style.background = ok ? 'rgba(52,211,153,0.1)' : 'rgba(255,77,106,0.1)';
-    el.style.borderColor = ok ? 'rgba(52,211,153,0.3)' : 'rgba(255,77,106,0.3)';
+    el.style.background = ok ? 'rgba(52,211,153,0.1)' : 'rgba(251,113,133,0.1)';
+    el.style.border = '1px solid ' + (ok ? 'rgba(52,211,153,0.3)' : 'rgba(251,113,133,0.35)');
     el.style.color = ok ? 'var(--ok)' : 'var(--danger)';
   }
   async function testProxmoxForm() {
@@ -5120,20 +5380,32 @@ document.addEventListener('DOMContentLoaded', function() {
   let aiHistory = [];      // [{role:'user'|'assistant', content:string}]
   let aiBusy = false;
   let aiInitDone = false;
+  const AI_ICON = {
+    spark: '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9z"/></svg>',
+    onu: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>',
+    alert: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+    server: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="6" rx="2"/><rect x="2" y="13" width="20" height="6" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="16" x2="6.01" y2="16"/></svg>',
+    cpu: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="3"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>',
+    pulse: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>',
+    copy: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+  };
   const AI_SUGGESTIONS = [
-    'Ringkas kondisi jaringan sekarang',
-    'ONU mana yang redamannya paling buruk?',
-    'Ada ONU LOS saat ini?',
-    'Node Proxmox mana yang paling penuh?',
-    'VM dengan CPU tertinggi apa?',
-    'Apakah polling SNMP semua OLT normal?',
+    { icon: 'spark',  t: 'Ringkas kondisi jaringan sekarang', s: 'ONU, OLT, dan polling' },
+    { icon: 'onu',    t: 'ONU mana yang redamannya paling buruk?', s: 'Sinyal lemah / kritis' },
+    { icon: 'alert',  t: 'Ada ONU LOS saat ini?', s: 'Daftar ONU bermasalah' },
+    { icon: 'server', t: 'Node Proxmox mana yang paling penuh?', s: 'CPU, RAM, dan disk' },
+    { icon: 'cpu',    t: 'VM dengan CPU tertinggi apa?', s: 'Resource VM/LXC' },
+    { icon: 'pulse',  t: 'Apakah polling SNMP semua OLT normal?', s: 'Status & kesegaran data' },
   ];
 
   async function initAiPage() {
     if (!aiInitDone) {
       aiInitDone = true;
-      aiRenderSuggestions();
-      aiAppendMessage('assistant', 'Halo! Saya asisten NOC. Saya bisa membaca data ONU, kesehatan OLT, dan resource Proxmox untuk membantu analisis. Silakan tanya, atau pilih salah satu contoh di bawah.');
+      document.getElementById('ai-suggestions').innerHTML = AI_SUGGESTIONS.map((x, i) => `
+        <button class="ai-suggest" onclick="aiAsk(${i})">
+          <span class="ai-suggest-ico">${AI_ICON[x.icon]}</span>
+          <span><div class="ai-suggest-t">${escHtml(x.t)}</div><div class="ai-suggest-s">${escHtml(x.s)}</div></span>
+        </button>`).join('');
       try {
         const r = await fetch('/api/ai/status');
         const d = await r.json();
@@ -5142,7 +5414,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!d.enabled) {
           const n = document.getElementById('ai-disabled-note');
           n.textContent = 'Fitur AI belum aktif: set environment variable AI_API_KEY di server, lalu restart server.';
-          n.style.display = '';
+          n.style.display = 'block';
         }
       } catch (e) {}
     }
@@ -5150,19 +5422,21 @@ document.addEventListener('DOMContentLoaded', function() {
     if (inp) inp.focus();
   }
 
-  function aiRenderSuggestions() {
-    const box = document.getElementById('ai-suggestions');
-    box.innerHTML = AI_SUGGESTIONS.map((s, i) =>
-      `<button class="btn btn-ghost" style="font-size:0.68rem;padding:5px 11px;" onclick="aiAsk(${i})">${escHtml(s)}</button>`
-    ).join('');
-  }
   function aiAsk(i) {
-    document.getElementById('ai-input').value = AI_SUGGESTIONS[i];
+    document.getElementById('ai-input').value = AI_SUGGESTIONS[i].t;
     aiSend();
   }
-
   function aiInputKey(e) {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); aiSend(); }
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); aiSend(); }
+  }
+  function aiAutosize() {
+    const t = document.getElementById('ai-input');
+    t.style.height = 'auto';
+    t.style.height = Math.min(t.scrollHeight, 160) + 'px';
+  }
+  function aiScrollBottom() {
+    const sc = document.getElementById('ai-scroll');
+    sc.scrollTop = sc.scrollHeight;
   }
 
   // Format ringan & aman: escape dulu, baru terapkan **tebal**, `kode`, bullet, dan blok ```kode```
@@ -5170,28 +5444,14 @@ document.addEventListener('DOMContentLoaded', function() {
     return String(text).split('```').map((seg, i) => {
       if (i % 2 === 1) {
         const code = seg.replace(/^[a-zA-Z0-9_-]*\n/, '');
-        return `<pre style="white-space:pre-wrap;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin:6px 0;overflow-x:auto;">${escHtml(code)}</pre>`;
+        return `<pre>${escHtml(code)}</pre>`;
       }
       let h = escHtml(seg);
-      h = h.replace(/`([^`\n]+)`/g, '<code style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0 4px;">$1</code>');
-      h = h.replace(/\*\*([^*\n]+)\*\*/g, '<b style="color:var(--accent);">$1</b>');
+      h = h.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+      h = h.replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
       h = h.replace(/^\s*[-*] /gm, '• ');
-      return h.replace(/\n/g, '<br>');
+      return h.replace(/\n{2,}/g, '<span style="display:block;height:8px"></span>').replace(/\n/g, '<br>');
     }).join('');
-  }
-
-  function aiAppendMessage(role, text, meta) {
-    const box = document.getElementById('ai-messages');
-    const isUser = role === 'user';
-    const div = document.createElement('div');
-    div.style.cssText = `align-self:${isUser ? 'flex-end' : 'flex-start'};max-width:min(820px,92%);`;
-    const bubble = isUser
-      ? `<div style="background:var(--accent);color:#04121a;border-radius:12px 12px 2px 12px;padding:9px 13px;font-family:var(--mono);font-size:0.78rem;line-height:1.55;white-space:pre-wrap;word-break:break-word;">${escHtml(text)}</div>`
-      : `<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px 12px 12px 2px;padding:10px 14px;font-family:var(--mono);font-size:0.78rem;line-height:1.6;color:var(--text);word-break:break-word;">${aiFormat(text)}</div>`;
-    div.innerHTML = bubble + (meta ? `<div style="font-family:var(--mono);font-size:0.6rem;color:var(--muted);margin-top:4px;">${meta}</div>` : '');
-    box.appendChild(div);
-    box.scrollTop = box.scrollHeight;
-    return div;
   }
 
   const AI_TOOL_LABELS = {
@@ -5200,22 +5460,56 @@ document.addEventListener('DOMContentLoaded', function() {
     get_proxmox_nodes: 'node Proxmox', get_proxmox_guests: 'VM/LXC Proxmox',
   };
 
+  // meta: { tools:[], fallbackModel:'', truncated:bool }
+  function aiAppendMessage(role, text, meta, opts) {
+    opts = opts || {};
+    document.getElementById('ai-welcome').style.display = 'none';
+    const isUser = role === 'user';
+    const div = document.createElement('div');
+    div.className = 'ai-msg ' + (isUser ? 'user' : 'bot') + (opts.error ? ' err' : '');
+    const chips = [];
+    if (meta && meta.tools && meta.tools.length) meta.tools.forEach(t => chips.push(`<span class="ai-chip">${escHtml(t)}</span>`));
+    if (meta && meta.fallbackModel) chips.push(`<span class="ai-chip warn">model cadangan: ${escHtml(meta.fallbackModel)}</span>`);
+    if (meta && meta.truncated) chips.push(`<span class="ai-chip warn">terpotong — ketik “lanjutkan”</span>`);
+    const showMeta = !isUser && !opts.error && !opts.typing;
+    div.innerHTML = `
+      <div class="ai-avatar">${AI_ICON.spark}</div>
+      <div class="ai-col">
+        <div class="ai-bubble">${isUser ? escHtml(text) : (opts.html || aiFormat(text))}</div>
+        ${showMeta ? `<div class="ai-meta">${chips.join('')}<button class="ai-copy" title="Salin jawaban">${AI_ICON.copy} salin</button></div>` : ''}
+      </div>`;
+    if (showMeta) {
+      const btn = div.querySelector('.ai-copy');
+      btn.addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText(text); } catch (e) {
+          const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+          try { document.execCommand('copy'); } catch (e2) {} ta.remove();
+        }
+        btn.innerHTML = '✓ tersalin'; setTimeout(() => { btn.innerHTML = AI_ICON.copy + ' salin'; }, 1500);
+      });
+    }
+    document.getElementById('ai-messages').appendChild(div);
+    aiScrollBottom();
+    return div;
+  }
+
   async function aiSend() {
     if (aiBusy) return;
     const inp = document.getElementById('ai-input');
     const text = inp.value.trim();
     if (!text) return;
-    inp.value = '';
-    document.getElementById('ai-suggestions').style.display = 'none';
+    inp.value = ''; aiAutosize();
 
     aiHistory.push({ role: 'user', content: text });
     aiAppendMessage('user', text);
 
     aiBusy = true;
     const btn = document.getElementById('ai-send-btn');
-    btn.disabled = true; btn.textContent = '…';
-    const typing = aiAppendMessage('assistant', 'Mengambil data & menganalisis…');
-    typing.style.opacity = '0.7';
+    btn.disabled = true;
+    const typing = aiAppendMessage('assistant', '', null, {
+      typing: true,
+      html: '<span class="ai-typing"><span class="ai-dots"><i></i><i></i><i></i></span>Mengambil data &amp; menganalisis…</span>',
+    });
 
     try {
       const res = await fetch('/api/ai/chat', {
@@ -5227,16 +5521,19 @@ document.addEventListener('DOMContentLoaded', function() {
       typing.remove();
       if (!res.ok || !data.success) throw new Error(data.message || ('HTTP ' + res.status));
       aiHistory.push({ role: 'assistant', content: data.reply });
-      const used = (data.toolsUsed || []).map(t => AI_TOOL_LABELS[t] || t);
-      aiAppendMessage('assistant', data.reply,
-        (used.length ? 'Sumber data: ' + escHtml(used.join(', ')) : '') + (data.fallbackUsed ? ' · dijawab model cadangan ' + escHtml(data.model) : '') + (data.truncated ? ' · jawaban terpotong, minta "lanjutkan"' : ''));
+      aiAppendMessage('assistant', data.reply, {
+        tools: (data.toolsUsed || []).map(t => AI_TOOL_LABELS[t] || t),
+        fallbackModel: data.fallbackUsed ? data.model : '',
+        truncated: !!data.truncated,
+      });
     } catch (e) {
       typing.remove();
-      aiHistory.pop(); // buang pesan user yang gagal supaya riwayat tetap konsisten
-      aiAppendMessage('assistant', '⚠ ' + e.message);
+      aiHistory.pop();                       // buang pesan user yang gagal supaya riwayat tetap konsisten
+      aiAppendMessage('assistant', '⚠ ' + e.message, null, { error: true });
+      inp.value = text; aiAutosize();        // kembalikan teks supaya bisa dikirim ulang
     } finally {
       aiBusy = false;
-      btn.disabled = false; btn.textContent = 'Kirim';
+      btn.disabled = false;
       inp.focus();
     }
   }
@@ -5245,8 +5542,9 @@ document.addEventListener('DOMContentLoaded', function() {
     if (aiBusy) return;
     aiHistory = [];
     document.getElementById('ai-messages').innerHTML = '';
-    aiAppendMessage('assistant', 'Chat baru dimulai. Apa yang ingin Anda cek?');
-    document.getElementById('ai-suggestions').style.display = 'flex';
+    document.getElementById('ai-welcome').style.display = '';
+    document.getElementById('ai-scroll').scrollTop = 0;
+    document.getElementById('ai-input').focus();
   }
 
   // ─── FFMPEG PAGE ───
