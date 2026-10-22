@@ -2884,6 +2884,10 @@ document.addEventListener('DOMContentLoaded', function() {
         <span class="sidebar-item-label">Proxmox</span>
         <span class="sidebar-badge" id="sb-proxmox-count">—</span>
       </div>
+      <div class="sidebar-item" data-page="ai" onclick="switchPage('ai'); initAiPage();">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 7l1 2.5L15.5 10.5 13 11.5 12 14l-1-2.5L8.5 10.5 11 9.5z"/></svg>
+        <span class="sidebar-item-label">AI Assistant</span>
+      </div>
       <div class="sidebar-item" data-page="rbl" onclick="switchPage('rbl')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><path d="M8 11l2 2 4-4"/></svg>
         <span class="sidebar-item-label">Scan RBL</span>
@@ -3733,6 +3737,41 @@ document.addEventListener('DOMContentLoaded', function() {
         <div id="pve-storages" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-bottom:10px;"></div>
       </div>
     </div><!-- /page-proxmox -->
+
+    <!-- ═══ PAGE: AI ASSISTANT ═══ -->
+    <div class="page-panel" id="page-ai">
+      <div class="page-header">
+        <div>
+          <div class="page-title-row">
+            <span class="page-title">AI Assistant</span>
+            <span class="page-badge">NOC</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span id="ai-model-label" style="font-family:var(--mono);font-size:0.65rem;color:var(--muted2);"></span>
+          <button class="term-action" onclick="aiClearChat()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+            CHAT BARU
+          </button>
+        </div>
+      </div>
+
+      <div style="flex:1;display:flex;flex-direction:column;min-height:0;padding:16px 20px;gap:12px;">
+        <div id="ai-disabled-note" style="display:none;padding:10px 14px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.35);border-radius:8px;font-family:var(--mono);font-size:0.72rem;color:var(--warn);"></div>
+
+        <div id="ai-messages" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding-right:4px;scrollbar-width:thin;scrollbar-color:var(--border2) transparent;"></div>
+
+        <div id="ai-suggestions" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+
+        <div style="display:flex;gap:10px;align-items:flex-end;">
+          <textarea id="ai-input" rows="2" placeholder="Tanya apa saja soal ONU, OLT, atau Proxmox… (Enter kirim, Shift+Enter baris baru)"
+            onkeydown="aiInputKey(event)"
+            style="flex:1;resize:none;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-family:var(--mono);font-size:0.78rem;line-height:1.5;"></textarea>
+          <button class="btn btn-primary" id="ai-send-btn" onclick="aiSend()" style="height:44px;padding:0 20px;">Kirim</button>
+        </div>
+        <div style="font-family:var(--mono);font-size:0.62rem;color:var(--muted);">AI hanya membaca data (tidak bisa mengubah konfigurasi). Data ONU berasal dari cache polling ±1 menit. Nama pelanggan &amp; SN yang relevan dengan pertanyaan dikirim ke penyedia AI (<span id="ai-provider-label">—</span>).</div>
+      </div>
+    </div><!-- /page-ai -->
 
     <!-- ═══ PAGE: SCAN RBL ═══ -->
     <div class="page-panel" id="page-rbl">
@@ -5075,6 +5114,139 @@ document.addEventListener('DOMContentLoaded', function() {
       pveSelected = null; pveData = null;
       await loadProxmoxServers();
     } catch (e) { pveShowError(e.message); }
+  }
+
+  // ─── AI ASSISTANT ───
+  let aiHistory = [];      // [{role:'user'|'assistant', content:string}]
+  let aiBusy = false;
+  let aiInitDone = false;
+  const AI_SUGGESTIONS = [
+    'Ringkas kondisi jaringan sekarang',
+    'ONU mana yang redamannya paling buruk?',
+    'Ada ONU LOS saat ini?',
+    'Node Proxmox mana yang paling penuh?',
+    'VM dengan CPU tertinggi apa?',
+    'Apakah polling SNMP semua OLT normal?',
+  ];
+
+  async function initAiPage() {
+    if (!aiInitDone) {
+      aiInitDone = true;
+      aiRenderSuggestions();
+      aiAppendMessage('assistant', 'Halo! Saya asisten NOC. Saya bisa membaca data ONU, kesehatan OLT, dan resource Proxmox untuk membantu analisis. Silakan tanya, atau pilih salah satu contoh di bawah.');
+      try {
+        const r = await fetch('/api/ai/status');
+        const d = await r.json();
+        document.getElementById('ai-model-label').textContent = d.model || '';
+        const pl = document.getElementById('ai-provider-label'); if (pl) pl.textContent = d.provider || '—';
+        if (!d.enabled) {
+          const n = document.getElementById('ai-disabled-note');
+          n.textContent = 'Fitur AI belum aktif: set environment variable AI_API_KEY di server, lalu restart server.';
+          n.style.display = '';
+        }
+      } catch (e) {}
+    }
+    const inp = document.getElementById('ai-input');
+    if (inp) inp.focus();
+  }
+
+  function aiRenderSuggestions() {
+    const box = document.getElementById('ai-suggestions');
+    box.innerHTML = AI_SUGGESTIONS.map((s, i) =>
+      `<button class="btn btn-ghost" style="font-size:0.68rem;padding:5px 11px;" onclick="aiAsk(${i})">${escHtml(s)}</button>`
+    ).join('');
+  }
+  function aiAsk(i) {
+    document.getElementById('ai-input').value = AI_SUGGESTIONS[i];
+    aiSend();
+  }
+
+  function aiInputKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); aiSend(); }
+  }
+
+  // Format ringan & aman: escape dulu, baru terapkan **tebal**, `kode`, bullet, dan blok ```kode```
+  function aiFormat(text) {
+    return String(text).split('```').map((seg, i) => {
+      if (i % 2 === 1) {
+        const code = seg.replace(/^[a-zA-Z0-9_-]*\n/, '');
+        return `<pre style="white-space:pre-wrap;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin:6px 0;overflow-x:auto;">${escHtml(code)}</pre>`;
+      }
+      let h = escHtml(seg);
+      h = h.replace(/`([^`\n]+)`/g, '<code style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0 4px;">$1</code>');
+      h = h.replace(/\*\*([^*\n]+)\*\*/g, '<b style="color:var(--accent);">$1</b>');
+      h = h.replace(/^\s*[-*] /gm, '• ');
+      return h.replace(/\n/g, '<br>');
+    }).join('');
+  }
+
+  function aiAppendMessage(role, text, meta) {
+    const box = document.getElementById('ai-messages');
+    const isUser = role === 'user';
+    const div = document.createElement('div');
+    div.style.cssText = `align-self:${isUser ? 'flex-end' : 'flex-start'};max-width:min(820px,92%);`;
+    const bubble = isUser
+      ? `<div style="background:var(--accent);color:#04121a;border-radius:12px 12px 2px 12px;padding:9px 13px;font-family:var(--mono);font-size:0.78rem;line-height:1.55;white-space:pre-wrap;word-break:break-word;">${escHtml(text)}</div>`
+      : `<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px 12px 12px 2px;padding:10px 14px;font-family:var(--mono);font-size:0.78rem;line-height:1.6;color:var(--text);word-break:break-word;">${aiFormat(text)}</div>`;
+    div.innerHTML = bubble + (meta ? `<div style="font-family:var(--mono);font-size:0.6rem;color:var(--muted);margin-top:4px;">${meta}</div>` : '');
+    box.appendChild(div);
+    box.scrollTop = box.scrollHeight;
+    return div;
+  }
+
+  const AI_TOOL_LABELS = {
+    get_onu_summary: 'ringkasan ONU', search_onu: 'cari ONU', list_problem_onus: 'ONU bermasalah',
+    get_olt_health: 'kesehatan OLT', get_poll_status: 'status polling',
+    get_proxmox_nodes: 'node Proxmox', get_proxmox_guests: 'VM/LXC Proxmox',
+  };
+
+  async function aiSend() {
+    if (aiBusy) return;
+    const inp = document.getElementById('ai-input');
+    const text = inp.value.trim();
+    if (!text) return;
+    inp.value = '';
+    document.getElementById('ai-suggestions').style.display = 'none';
+
+    aiHistory.push({ role: 'user', content: text });
+    aiAppendMessage('user', text);
+
+    aiBusy = true;
+    const btn = document.getElementById('ai-send-btn');
+    btn.disabled = true; btn.textContent = '…';
+    const typing = aiAppendMessage('assistant', 'Mengambil data & menganalisis…');
+    typing.style.opacity = '0.7';
+
+    try {
+      const res = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: aiHistory }),
+      });
+      const data = await res.json().catch(() => ({}));
+      typing.remove();
+      if (!res.ok || !data.success) throw new Error(data.message || ('HTTP ' + res.status));
+      aiHistory.push({ role: 'assistant', content: data.reply });
+      const used = (data.toolsUsed || []).map(t => AI_TOOL_LABELS[t] || t);
+      aiAppendMessage('assistant', data.reply,
+        (used.length ? 'Sumber data: ' + escHtml(used.join(', ')) : '') + (data.fallbackUsed ? ' · dijawab model cadangan ' + escHtml(data.model) : '') + (data.truncated ? ' · jawaban terpotong, minta "lanjutkan"' : ''));
+    } catch (e) {
+      typing.remove();
+      aiHistory.pop(); // buang pesan user yang gagal supaya riwayat tetap konsisten
+      aiAppendMessage('assistant', '⚠ ' + e.message);
+    } finally {
+      aiBusy = false;
+      btn.disabled = false; btn.textContent = 'Kirim';
+      inp.focus();
+    }
+  }
+
+  function aiClearChat() {
+    if (aiBusy) return;
+    aiHistory = [];
+    document.getElementById('ai-messages').innerHTML = '';
+    aiAppendMessage('assistant', 'Chat baru dimulai. Apa yang ingin Anda cek?');
+    document.getElementById('ai-suggestions').style.display = 'flex';
   }
 
   // ─── FFMPEG PAGE ───
@@ -9628,7 +9800,7 @@ function dismissToast() {
 // Pakai sessionStorage (bukan localStorage) supaya kalau tab/browser ditutup lalu dibuka baru,
 // tampilan tetap mulai dari Dashboard seperti semula — hanya refresh di tab yang sama yang dipertahankan.
 (function() {
-  var NOCS_VALID_PAGES = ['dashboard', 'activate', 'monitor', 'history', 'mikrotik', 'ffmpeg', 'rbl', 'uptime', 'proxmox'];
+  var NOCS_VALID_PAGES = ['dashboard', 'activate', 'monitor', 'history', 'mikrotik', 'ffmpeg', 'rbl', 'uptime', 'proxmox', 'ai'];
   var savedPage = sessionStorage.getItem('nocs_last_page');
   if (!savedPage || savedPage === 'dashboard' || !NOCS_VALID_PAGES.includes(savedPage)) return;
 
@@ -9639,6 +9811,7 @@ function dismissToast() {
   if (savedPage === 'ffmpeg') initFfmpegPage();
   if (savedPage === 'uptime') initUptimePage();
   if (savedPage === 'proxmox') initProxmoxPage();
+  if (savedPage === 'ai') initAiPage();
 })();
 </script>
 </body>

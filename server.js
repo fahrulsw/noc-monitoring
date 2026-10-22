@@ -3518,10 +3518,9 @@ app.get('/api/proxmox/:name/resources', requireAuth, async (req, res) => {
 // Mengumpulkan node dari semua server yang terdaftar dalam satu panggilan.
 // Cache singkat (10 dtk) supaya refresh dashboard berulang tidak membebani Proxmox.
 let _pveSummaryCache = { ts: 0, data: null };
-app.get('/api/proxmox/summary', requireAuth, async (req, res) => {
-  try {
+async function buildProxmoxSummary() {
     if (_pveSummaryCache.data && Date.now() - _pveSummaryCache.ts < 10000) {
-      return res.json(_pveSummaryCache.data);
+      return _pveSummaryCache.data;
     }
     const servers = db.prepare('SELECT * FROM proxmox_config').all();
     const pct = (used, total) => (total > 0 ? Math.round((used / total) * 1000) / 10 : 0);
@@ -3560,7 +3559,11 @@ app.get('/api/proxmox/summary', requireAuth, async (req, res) => {
 
     const payload = { success: true, ts: new Date().toISOString(), serverCount: servers.length, nodes, errors };
     _pveSummaryCache = { ts: Date.now(), data: payload };
-    res.json(payload);
+    return payload;
+}
+app.get('/api/proxmox/summary', requireAuth, async (req, res) => {
+  try {
+    res.json(await buildProxmoxSummary());
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
   }
@@ -3597,6 +3600,407 @@ app.get('/api/proxmox/:name/node/:node/status', requireAuth, async (req, res) =>
 
 // ============================================================
 // END PATCH: Proxmox VE Resource Monitoring
+// ============================================================
+
+// ============================================================
+// PATCH: AI Assistant NOC (OpenAI-compatible API, default Gemini + tool READ-ONLY)
+// ============================================================
+// Provider-netral: memakai format OpenAI-compatible (/chat/completions), jadi bisa Gemini,
+// Groq, OpenRouter, atau Ollama lokal hanya dengan mengganti environment variable.
+//
+// Default = Google Gemini (ada free tier). Cukup set:
+//   AI_API_KEY   = API key dari https://aistudio.google.com/apikey   (atau GEMINI_API_KEY)
+// Opsional:
+//   AI_BASE_URL  = default https://generativelanguage.googleapis.com/v1beta/openai
+//   AI_MODEL     = default gemini-3.8-flash
+//   AI_REASONING_EFFORT = low | medium | high (kosong = default provider; 'low' = lebih cepat)
+//   AI_FALLBACK_MODEL    = model cadangan otomatis (default gemini-3.5-flash-lite; kosong = nonaktif)
+// Contoh Ollama lokal: AI_BASE_URL=http://localhost:11434/v1  AI_API_KEY=ollama  AI_MODEL=qwen2.5:14b
+//
+// AI hanya punya tool BACA (cache ONU, kesehatan OLT, Proxmox, status polling).
+// Tidak ada tool yang bisa telnet/ubah config OLT, Mikrotik, atau Proxmox.
+// Tool TIDAK PERNAH mengembalikan password/token/community.
+const AI_API_KEY  = process.env.AI_API_KEY || process.env.GEMINI_API_KEY || '';
+const AI_BASE_URL = (process.env.AI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai').replace(/\/+$/, '');
+const AI_MODEL    = process.env.AI_MODEL || 'gemini-3.8-flash';
+const AI_REASONING_EFFORT = process.env.AI_REASONING_EFFORT || '';
+// Model cadangan otomatis saat model utama 'high demand' / kuota habis / timeout. Kosongkan (AI_FALLBACK_MODEL=) untuk menonaktifkan.
+const AI_FALLBACK_MODEL = process.env.AI_FALLBACK_MODEL !== undefined ? process.env.AI_FALLBACK_MODEL : 'gemini-3.5-flash-lite';
+const AI_MAX_TOOL_ROUNDS = 6;
+const AI_MAX_TOKENS = 4096;          // longgar: model "thinking" memakai sebagian budget ini untuk bernalar
+const AI_RATE_LIMIT = 20;            // maks pesan per user ...
+const AI_RATE_WINDOW_MS = 10 * 60 * 1000; // ... dalam 10 menit (jaga kuota free tier)
+const _aiRate = new Map();
+
+function aiRateOk(userId) {
+  const now = Date.now();
+  const arr = (_aiRate.get(userId) || []).filter(t => now - t < AI_RATE_WINDOW_MS);
+  if (arr.length >= AI_RATE_LIMIT) { _aiRate.set(userId, arr); return false; }
+  arr.push(now);
+  _aiRate.set(userId, arr);
+  return true;
+}
+
+const AI_TOOLS = [
+  {
+    name: 'get_onu_summary',
+    description: 'Ringkasan jumlah ONU per OLT: total, online, offline, LOS, dying gasp. Sumber: cache polling SNMP (diperbarui ~tiap 1 menit).',
+    input_schema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'search_onu',
+    description: 'Cari ONU berdasarkan nama pelanggan/lokasi ATAU serial number (substring, tidak peka huruf besar/kecil).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Kata kunci nama/lokasi atau serial number' },
+        olt_name: { type: 'string', description: 'Opsional: batasi ke satu OLT (nama persis)' },
+        limit: { type: 'integer', description: 'Maks hasil (default 15, maks 25)' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'list_problem_onus',
+    description: 'Daftar ONU bermasalah. issue: "offline" (semua yang tidak online), "los" (status LOS), "weak_signal" (online tapi RX power lebih buruk dari ambang), atau "all" (gabungan).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        issue: { type: 'string', enum: ['offline', 'los', 'weak_signal', 'all'] },
+        olt_name: { type: 'string', description: 'Opsional: batasi ke satu OLT' },
+        rx_threshold: { type: 'number', description: 'Ambang RX dBm untuk weak_signal (default -27). ONU dengan RX < nilai ini dianggap lemah.' },
+        limit: { type: 'integer', description: 'Maks baris ditampilkan (default 20, maks 40)' },
+      },
+      required: ['issue'],
+    },
+  },
+  {
+    name: 'get_olt_health',
+    description: 'Kesehatan OLT: uptime sistem dan CPU/RAM per card/slot.',
+    input_schema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'get_poll_status',
+    description: 'Status polling SNMP terakhir per OLT: waktu, durasi, sukses/gagal, pesan error. Berguna untuk cek apakah data ONU masih segar.',
+    input_schema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'get_proxmox_nodes',
+    description: 'Resource node Proxmox dari semua server terdaftar: status, CPU %, RAM, disk, uptime, jumlah VM/LXC running.',
+    input_schema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'get_proxmox_guests',
+    description: 'Daftar VM/LXC Proxmox dengan CPU/RAM. Bisa difilter status/nama dan diurutkan.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        server: { type: 'string', description: 'Opsional: nama server Proxmox' },
+        status: { type: 'string', enum: ['running', 'stopped'], description: 'Opsional' },
+        query: { type: 'string', description: 'Opsional: cari nama atau VMID' },
+        sort_by: { type: 'string', enum: ['cpu', 'mem', 'vmid'], description: 'Default vmid. cpu/mem = terbesar dulu.' },
+        limit: { type: 'integer', description: 'Maks baris (default 20, maks 40)' },
+      },
+      required: [],
+    },
+  },
+];
+
+const _isCctv = (n) => String(n || '').toUpperCase().includes('CCTV'); // duplikat IP OLT, sama seperti dashboard
+const _clampLimit = (v, def, max) => Math.max(1, Math.min(max, parseInt(v) || def));
+const _onuRow = (r) => ({
+  olt: r.olt_name,
+  interface: `1/${r.slot}/${r.port}:${r.onu_id}`,
+  name: r.name,
+  serial: r.serial_number,
+  status: r.status_label,
+  rx_dbm: r.rx_power !== null && r.rx_power !== '' ? Number(r.rx_power) : null,
+  last_online: r.last_online,
+  last_offline: r.last_offline,
+});
+
+async function aiRunTool(name, input) {
+  input = input || {};
+  switch (name) {
+    case 'get_onu_summary': {
+      const rows = db.prepare(`
+        SELECT olt_name, COUNT(*) AS total, SUM(online) AS online,
+               SUM(CASE WHEN status_code = 1 THEN 1 ELSE 0 END) AS los,
+               SUM(CASE WHEN status_code = 4 THEN 1 ELSE 0 END) AS dying_gasp
+        FROM onu_cache GROUP BY olt_name ORDER BY olt_name`).all().filter(r => !_isCctv(r.olt_name));
+      return rows.map(r => ({ olt: r.olt_name, total: r.total, online: r.online, offline: r.total - r.online, los: r.los, dying_gasp: r.dying_gasp }));
+    }
+    case 'search_onu': {
+      const q = String(input.query || '').trim();
+      if (!q) return { error: 'query kosong' };
+      const like = `%${q}%`;
+      const params = [like, like];
+      let sql = 'SELECT * FROM onu_cache WHERE (name LIKE ? OR serial_number LIKE ?)';
+      if (input.olt_name) { sql += ' AND olt_name = ?'; params.push(input.olt_name); }
+      sql += ' ORDER BY olt_name, slot, port, onu_id';
+      const all = db.prepare(sql).all(...params).filter(r => !_isCctv(r.olt_name));
+      const limit = _clampLimit(input.limit, 15, 25);
+      return { total_matching: all.length, shown: Math.min(limit, all.length), items: all.slice(0, limit).map(_onuRow) };
+    }
+    case 'list_problem_onus': {
+      const issue = input.issue || 'all';
+      const thr = typeof input.rx_threshold === 'number' ? input.rx_threshold : -27;
+      const conds = [];
+      if (issue === 'offline') conds.push('online = 0');
+      else if (issue === 'los') conds.push('status_code = 1');
+      else if (issue === 'weak_signal') conds.push("online = 1 AND rx_power IS NOT NULL AND rx_power != '' AND CAST(rx_power AS REAL) < ?");
+      else conds.push("(online = 0 OR (online = 1 AND rx_power IS NOT NULL AND rx_power != '' AND CAST(rx_power AS REAL) < ?))");
+      const params = (issue === 'weak_signal' || issue === 'all') ? [thr] : [];
+      let sql = `SELECT * FROM onu_cache WHERE ${conds.join(' AND ')}`;
+      if (input.olt_name) { sql += ' AND olt_name = ?'; params.push(input.olt_name); }
+      // paling parah dulu: RX terendah di atas
+      sql += " ORDER BY CASE WHEN rx_power IS NULL OR rx_power = '' THEN 1 ELSE 0 END, CAST(rx_power AS REAL) ASC";
+      const all = db.prepare(sql).all(...params).filter(r => !_isCctv(r.olt_name));
+      const limit = _clampLimit(input.limit, 20, 40);
+      return { issue, rx_threshold_dbm: thr, total_matching: all.length, shown: Math.min(limit, all.length), items: all.slice(0, limit).map(_onuRow) };
+    }
+    case 'get_olt_health': {
+      const health = db.prepare('SELECT * FROM olt_health ORDER BY olt_name, slot_index').all();
+      const sys = db.prepare('SELECT * FROM olt_sys_info').all();
+      const by = {};
+      sys.forEach(s => { by[s.olt_name] = { olt: s.olt_name, sys_uptime: s.sys_uptime, updated_at: s.updated_at, cards: [] }; });
+      health.forEach(h => {
+        if (!by[h.olt_name]) by[h.olt_name] = { olt: h.olt_name, sys_uptime: null, updated_at: h.updated_at, cards: [] };
+        by[h.olt_name].cards.push({ slot: h.slot_index, card_type: h.card_type, cpu_pct: h.cpu_load, mem_pct: h.mem_usage, oper_status: h.oper_status });
+      });
+      return Object.values(by).filter(o => !_isCctv(o.olt));
+    }
+    case 'get_poll_status': {
+      return db.prepare('SELECT olt_name, polled_at, duration_ms, onu_count, online_count, success, error_msg FROM poll_log GROUP BY olt_name HAVING MAX(id)')
+        .all().filter(r => !_isCctv(r.olt_name)).map(r => ({ ...r, success: !!r.success }));
+    }
+    case 'get_proxmox_nodes': {
+      const s = await buildProxmoxSummary();
+      return { server_count: s.serverCount, nodes: s.nodes, unreachable_servers: s.errors };
+    }
+    case 'get_proxmox_guests': {
+      const servers = db.prepare('SELECT * FROM proxmox_config').all().filter(s => !input.server || s.name === input.server);
+      const out = [], errors = [];
+      const results = await Promise.allSettled(servers.map(async (cfg) => {
+        const items = (await proxmoxFetch(cfg, '/cluster/resources')) || [];
+        items.filter(i => (i.type === 'qemu' || i.type === 'lxc') && !i.template).forEach(g => out.push({
+          server: cfg.name, vmid: g.vmid, name: g.name, type: g.type === 'qemu' ? 'VM' : 'LXC', node: g.node, status: g.status,
+          cpu_pct: Math.round((g.cpu || 0) * 1000) / 10,
+          mem_pct: g.maxmem > 0 ? Math.round((g.mem / g.maxmem) * 1000) / 10 : 0,
+          mem_used_gb: Math.round(((g.mem || 0) / 1073741824) * 10) / 10,
+          mem_total_gb: Math.round(((g.maxmem || 0) / 1073741824) * 10) / 10,
+          uptime_hours: Math.round((g.uptime || 0) / 360) / 10,
+        }));
+      }));
+      results.forEach((r, i) => { if (r.status === 'rejected') errors.push({ server: servers[i].name, message: r.reason && r.reason.message }); });
+      let list = out;
+      if (input.status) list = list.filter(g => g.status === input.status);
+      if (input.query) { const q = String(input.query).toLowerCase(); list = list.filter(g => String(g.vmid).includes(q) || String(g.name || '').toLowerCase().includes(q)); }
+      if (input.sort_by === 'cpu') list.sort((a, b) => b.cpu_pct - a.cpu_pct);
+      else if (input.sort_by === 'mem') list.sort((a, b) => b.mem_pct - a.mem_pct);
+      else list.sort((a, b) => a.vmid - b.vmid);
+      const limit = _clampLimit(input.limit, 20, 40);
+      return { total_matching: list.length, shown: Math.min(limit, list.length), items: list.slice(0, limit), unreachable_servers: errors };
+    }
+    default:
+      return { error: `Tool tidak dikenal: ${name}` };
+  }
+}
+
+// Konversi definisi tool ke format OpenAI. Tool tanpa parameter: parameters DIHILANGKAN
+// (beberapa provider, termasuk Gemini, menolak skema object dengan properties kosong).
+const AI_TOOLS_OPENAI = AI_TOOLS.map(t => {
+  const props = (t.input_schema && t.input_schema.properties) || {};
+  const fn = { name: t.name, description: t.description };
+  if (Object.keys(props).length) {
+    const params = { type: 'object', properties: props };
+    if (t.input_schema.required && t.input_schema.required.length) params.required = t.input_schema.required;
+    fn.parameters = params;
+  }
+  return { type: 'function', function: fn };
+});
+
+const AI_CALL_TIMEOUT_MS = 60000;
+const AI_COOLDOWN_MS = 2 * 60 * 1000;   // setelah model utama kewalahan, langsung pakai cadangan selama 2 menit
+let _aiPrimaryDownUntil = 0;
+
+// Satu panggilan ke satu model. Melempar Error dengan flag:
+//   fallbackable = layak dialihkan ke model cadangan (overload 5xx, kuota 429, timeout, jaringan, model 404)
+//   retryable    = layak diulang pada model yang sama (5xx, timeout, jaringan)
+async function aiCallOnce(model, messages) {
+  const body = {
+    model,
+    max_tokens: AI_MAX_TOKENS,
+    messages: [{ role: 'system', content: aiSystemPrompt() }, ...messages],
+    tools: AI_TOOLS_OPENAI,
+    tool_choice: 'auto',
+  };
+  if (AI_REASONING_EFFORT) body.reasoning_effort = AI_REASONING_EFFORT;
+  try {
+    const r = await fetch(AI_BASE_URL + '/chat/completions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + AI_API_KEY },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(AI_CALL_TIMEOUT_MS),
+    });
+    let j = await r.json().catch(() => ({}));
+    if (Array.isArray(j)) j = j[0] || {};       // Gemini kadang membungkus error dalam array
+    if (!r.ok) {
+      const raw = (j.error && j.error.message) || `HTTP ${r.status}`;
+      let msg = raw;
+      if (r.status === 401 || r.status === 403) msg = 'AI_API_KEY tidak valid / tidak punya akses';
+      else if (r.status === 429) msg = 'Kuota/batas request AI tercapai (free tier). Tunggu sebentar lalu coba lagi.';
+      else if (r.status === 503) msg = 'Model AI sedang kewalahan (high demand). ' + raw;
+      const err = new Error(msg);
+      err.status = r.status;
+      err.retryable = r.status >= 500;
+      err.fallbackable = r.status >= 500 || r.status === 429 || r.status === 404;
+      throw err;
+    }
+    j._model = model;
+    return j;
+  } catch (e) {
+    if (e.fallbackable !== undefined) throw e;   // sudah dibungkus di atas
+    const isTimeout = e && (e.name === 'TimeoutError' || e.name === 'AbortError');
+    const err = new Error(isTimeout
+      ? `Server AI tidak merespons dalam ${AI_CALL_TIMEOUT_MS / 1000} detik (sedang padat/lambat).`
+      : 'Tidak dapat menjangkau server AI (cek koneksi internet/firewall server): ' + ((e.cause && e.cause.code) || e.message));
+    err.retryable = true;
+    err.fallbackable = true;
+    throw err;
+  }
+}
+
+async function aiCallLLM(messages) {
+  const models = [AI_MODEL];
+  const hasFallback = AI_FALLBACK_MODEL && AI_FALLBACK_MODEL !== AI_MODEL;
+  if (hasFallback) {
+    // Jika model utama baru saja kewalahan, langsung mulai dari cadangan (hemat waktu tunggu per putaran)
+    if (Date.now() < _aiPrimaryDownUntil) models.unshift(AI_FALLBACK_MODEL);
+    else models.push(AI_FALLBACK_MODEL);
+  }
+  let lastErr;
+  for (let mi = 0; mi < models.length; mi++) {
+    const model = models[mi];
+    const isLast = mi === models.length - 1;
+    // Model terakhir boleh diulang 1x; model sebelumnya langsung pindah ke cadangan (tanpa menunggu)
+    const attempts = isLast ? 2 : 1;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      const t0 = Date.now();
+      try {
+        const j = await aiCallOnce(model, messages);
+        console.log(`[AI] ${model} OK (${Date.now() - t0}ms${attempt > 1 ? ', percobaan ' + attempt : ''})`);
+        return j;
+      } catch (e) {
+        lastErr = e;
+        console.log(`[AI] ${model} GAGAL (${Date.now() - t0}ms, percobaan ${attempt}): ${e.message}`);
+        if (e.fallbackable && model === AI_MODEL && hasFallback) _aiPrimaryDownUntil = Date.now() + AI_COOLDOWN_MS;
+        if (!e.fallbackable) throw e;                       // 401/403/400: model lain tidak akan membantu
+        if (e.retryable && attempt < attempts) { await sleep(1000); continue; }
+        break;                                               // lanjut ke model berikutnya
+      }
+    }
+  }
+  if (lastErr && hasFallback) lastErr.message += ' (model cadangan juga gagal)';
+  throw lastErr;
+}
+
+function aiSystemPrompt() {
+  const now = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', dateStyle: 'full', timeStyle: 'short' });
+  return [
+    'Kamu adalah asisten NOC untuk ISP (jaringan GPON ZTE C300/C320, Mikrotik, dan Proxmox) yang dipakai tim teknis lewat dashboard NOCS.',
+    `Sekarang: ${now} (WIB).`,
+    '',
+    'Aturan:',
+    '- Jawab dalam Bahasa Indonesia, ringkas dan langsung ke inti.',
+    '- WAJIB ambil data lewat tool sebelum menjawab pertanyaan tentang kondisi jaringan. Jangan mengarang angka, nama pelanggan, atau status.',
+    '- Data ONU/OLT berasal dari cache polling SNMP (~1 menit sekali), bukan real-time. Sebut jika relevan.',
+    '- Jika hasil tool terpotong (total_matching > shown), katakan jumlah total dan bahwa yang tampil hanya sebagian.',
+    '- Kamu HANYA bisa membaca data. Kamu tidak bisa mengubah konfigurasi, menjalankan perintah di OLT/Mikrotik/Proxmox, atau mengaktifkan ONU. Jika diminta, jelaskan langkahnya saja dan arahkan ke menu dashboard yang sesuai.',
+    '- Referensi redaman ONU: RX -8 s/d -25 dBm normal, -25 s/d -28 mulai lemah, di bawah -28 kritis. Sebutkan ini sebagai panduan umum.',
+    '- Jangan memakai tabel markdown. Gunakan daftar bullet atau penomoran. Boleh pakai **tebal** dan `kode` seperlunya.',
+  ].join('\n');
+}
+
+app.get('/api/ai/status', requireAuth, (req, res) => {
+  let host = '';
+  try { host = new URL(AI_BASE_URL).host; } catch (e) {}
+  res.json({ success: true, enabled: !!AI_API_KEY, model: AI_MODEL, fallbackModel: AI_FALLBACK_MODEL || null, provider: host });
+});
+
+app.post('/api/ai/chat', requireAuth, async (req, res) => {
+  if (!AI_API_KEY) {
+    return res.status(503).json({ success: false, message: 'Fitur AI belum aktif: set environment variable AI_API_KEY di server lalu restart.' });
+  }
+  if (!aiRateOk(req.user.id)) {
+    return res.status(429).json({ success: false, message: `Batas ${AI_RATE_LIMIT} pesan per ${AI_RATE_WINDOW_MS / 60000} menit tercapai. Coba lagi sebentar.` });
+  }
+
+  // Validasi riwayat dari frontend: hanya teks, maks 20 pesan terakhir, mulai dari pesan user
+  let history = Array.isArray(req.body.messages) ? req.body.messages : [];
+  history = history
+    .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
+    .map(m => ({ role: m.role, content: m.content.slice(0, 4000) }))
+    .slice(-20);
+  while (history.length && history[0].role !== 'user') history.shift();
+  if (!history.length || history[history.length - 1].role !== 'user') {
+    return res.status(400).json({ success: false, message: 'Pesan tidak valid' });
+  }
+
+  const messages = history.slice();
+  const toolsUsed = [];
+  let usedModel = AI_MODEL;
+  try {
+    for (let round = 0; round < AI_MAX_TOOL_ROUNDS; round++) {
+      const resp = await aiCallLLM(messages);
+      usedModel = resp._model || AI_MODEL;
+      const choice = resp.choices && resp.choices[0];
+      const msg = choice && choice.message;
+      if (!msg) throw new Error('Respon AI kosong');
+
+      const calls = msg.tool_calls || [];
+      if (!calls.length) {
+        const text = (typeof msg.content === 'string' ? msg.content : '').trim();
+        return res.json({
+          success: true,
+          reply: text || '(AI tidak memberi jawaban)',
+          toolsUsed: [...new Set(toolsUsed)],
+          model: usedModel,
+          fallbackUsed: usedModel !== AI_MODEL,
+          truncated: choice.finish_reason === 'length',
+        });
+      }
+
+      // Kembalikan pesan assistant APA ADANYA (termasuk tool_calls & metadata provider
+      // seperti extra_content/thought_signature milik Gemini) supaya putaran berikutnya valid.
+      messages.push({ role: 'assistant', content: msg.content || null, tool_calls: calls });
+      // Jalankan semua tool yang diminta secara PARALEL (lebih cepat), urutan hasil tetap sesuai urutan call.
+      const toolMsgs = await Promise.all(calls.map(async (call) => {
+        const fname = call.function && call.function.name;
+        toolsUsed.push(fname);
+        let args = {};
+        try { args = JSON.parse((call.function && call.function.arguments) || '{}'); } catch (e) {}
+        const tt = Date.now();
+        let out;
+        try { out = await aiRunTool(fname, args); }
+        catch (e) { out = { error: e.message }; }
+        console.log(`[AI] tool ${fname} selesai (${Date.now() - tt}ms)`);
+        let json = JSON.stringify(out);
+        if (json.length > 12000) json = json.slice(0, 12000) + '…[dipotong]';
+        return { role: 'tool', tool_call_id: call.id, content: json };
+      }));
+      messages.push(...toolMsgs);
+    }
+    res.json({ success: true, reply: 'Pertanyaan terlalu kompleks (batas langkah pencarian data tercapai). Coba pecah jadi pertanyaan yang lebih spesifik.', toolsUsed: [...new Set(toolsUsed)] });
+  } catch (e) {
+    console.error('[AI]', e.message);
+    const code = e.status === 429 ? 429 : (e.status === 401 || e.status === 403) ? 503 : e.retryable ? 504 : 500;
+    res.status(code).json({ success: false, message: 'AI error: ' + e.message });
+  }
+});
+
+// ============================================================
+// END PATCH: AI Assistant
 // ============================================================
 
 // --- PORT ---
