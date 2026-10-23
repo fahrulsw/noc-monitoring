@@ -3771,7 +3771,7 @@ async function aiRunTool(name, input) {
       return Object.values(by).filter(o => !_isCctv(o.olt));
     }
     case 'get_poll_status': {
-      return db.prepare('SELECT olt_name, polled_at, duration_ms, onu_count, online_count, success, error_msg FROM poll_log GROUP BY olt_name HAVING MAX(id)')
+      return db.prepare('SELECT olt_name, polled_at, duration_ms, onu_count, online_count, success, error_msg FROM poll_log WHERE id IN (SELECT MAX(id) FROM poll_log GROUP BY olt_name)')
         .all().filter(r => !_isCctv(r.olt_name)).map(r => ({ ...r, success: !!r.success }));
     }
     case 'get_proxmox_nodes': {
@@ -3827,14 +3827,14 @@ let _aiPrimaryDownUntil = 0;
 // Satu panggilan ke satu model. Melempar Error dengan flag:
 //   fallbackable = layak dialihkan ke model cadangan (overload 5xx, kuota 429, timeout, jaringan, model 404)
 //   retryable    = layak diulang pada model yang sama (5xx, timeout, jaringan)
-async function aiCallOnce(model, messages) {
+async function aiCallOnce(model, messages, opts) {
+  opts = opts || {};
   const body = {
     model,
-    max_tokens: AI_MAX_TOKENS,
-    messages: [{ role: 'system', content: aiSystemPrompt() }, ...messages],
-    tools: AI_TOOLS_OPENAI,
-    tool_choice: 'auto',
+    max_tokens: opts.maxTokens || AI_MAX_TOKENS,
+    messages: [{ role: 'system', content: opts.system || aiSystemPrompt() }, ...messages],
   };
+  if (!opts.noTools) { body.tools = AI_TOOLS_OPENAI; body.tool_choice = 'auto'; }
   if (AI_REASONING_EFFORT) body.reasoning_effort = AI_REASONING_EFFORT;
   try {
     const r = await fetch(AI_BASE_URL + '/chat/completions', {
@@ -3871,7 +3871,7 @@ async function aiCallOnce(model, messages) {
   }
 }
 
-async function aiCallLLM(messages) {
+async function aiCallLLM(messages, opts) {
   const models = [AI_MODEL];
   const hasFallback = AI_FALLBACK_MODEL && AI_FALLBACK_MODEL !== AI_MODEL;
   if (hasFallback) {
@@ -3888,7 +3888,7 @@ async function aiCallLLM(messages) {
     for (let attempt = 1; attempt <= attempts; attempt++) {
       const t0 = Date.now();
       try {
-        const j = await aiCallOnce(model, messages);
+        const j = await aiCallOnce(model, messages, opts);
         console.log(`[AI] ${model} OK (${Date.now() - t0}ms${attempt > 1 ? ', percobaan ' + attempt : ''})`);
         return j;
       } catch (e) {
@@ -4003,9 +4003,319 @@ app.post('/api/ai/chat', requireAuth, async (req, res) => {
 // END PATCH: AI Assistant
 // ============================================================
 
+// ============================================================
+// PATCH: Ringkasan Harian Otomatis (Telegram)
+// ============================================================
+// Mengirim laporan kondisi jaringan ke group Telegram tiap hari pada jam yang diatur
+// (default 07:00 WIB). Isi laporan dihitung dari data yang sudah ada (ONU, OLT, polling,
+// aktivasi, Proxmox) — TANPA AI. AI (opsional) hanya menambah "Kesimpulan" di akhir dan
+// hanya menerima angka agregat (tanpa nama pelanggan / SN).
+// Pengaturan disimpan di DB (tabel app_settings), bisa diubah dari dashboard.
+const REPORT_TZ = process.env.REPORT_TZ || 'Asia/Jakarta';
+const REPORT_CATCHUP_MIN = 180;       // kalau server baru hidup lewat jam jadwal, masih dikirim s/d 3 jam setelahnya
+const REPORT_RETRY_MS = 5 * 60 * 1000; // jeda coba ulang kalau Telegram gagal
+const REPORT_WEAK_RX = -27;           // dBm, ambang redaman lemah (sama dengan AI Assistant)
+const REPORT_HIGH_PCT = 85;           // ambang CPU/RAM/disk "tinggi"
+
+db.exec(`CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)`);
+const _getSetting = (k, def) => { const r = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(k); return r ? r.value : def; };
+const _setSetting = (k, v) => db.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(k, String(v));
+
+function reportGetConfig() {
+  return {
+    enabled: _getSetting('report_enabled', '1') === '1',
+    time: _getSetting('report_time', '07:00'),
+    ai: _getSetting('report_ai', '1') === '1',
+    lastSent: _getSetting('report_last_sent', ''),
+  };
+}
+
+const _rh = (s) => String(s === null || s === undefined ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const _num = (v) => (v === null || v === undefined || v === '' || isNaN(Number(v))) ? null : Number(v);
+
+function reportNowInTz() {
+  const parts = {};
+  new Intl.DateTimeFormat('en-GB', { timeZone: REPORT_TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    .formatToParts(new Date()).forEach(p => { parts[p.type] = p.value; });
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, hhmm: `${parts.hour}:${parts.minute}`, minutes: parseInt(parts.hour) * 60 + parseInt(parts.minute) };
+}
+
+// Kumpulkan semua data (objek murni, belum diformat)
+async function reportCollect() {
+  const f = {};
+
+  // --- ONU per OLT ---
+  const onus = db.prepare('SELECT * FROM onu_cache').all().filter(r => !_isCctv(r.olt_name));
+  const byOlt = {};
+  onus.forEach(r => {
+    const o = byOlt[r.olt_name] || (byOlt[r.olt_name] = { olt: r.olt_name, total: 0, online: 0, los: 0, dyingGasp: 0, otherOffline: 0 });
+    o.total++;
+    if (r.online) o.online++;
+    else if (r.status_code === 1) o.los++;
+    else if (r.status_code === 4) o.dyingGasp++;
+    else o.otherOffline++;
+  });
+  f.olts = Object.values(byOlt).sort((a, b) => a.olt.localeCompare(b.olt));
+  f.totals = f.olts.reduce((t, o) => ({ total: t.total + o.total, online: t.online + o.online, los: t.los + o.los, dyingGasp: t.dyingGasp + o.dyingGasp, otherOffline: t.otherOffline + o.otherOffline }),
+    { total: 0, online: 0, los: 0, dyingGasp: 0, otherOffline: 0 });
+
+  // --- LOS: kelompokkan per port supaya kelihatan kalau masalahnya massal (feeder/ODP) ---
+  const losByPort = {};
+  onus.filter(r => r.status_code === 1).forEach(r => {
+    const k = `${r.olt_name}|${r.slot}|${r.port}`;
+    losByPort[k] = (losByPort[k] || 0) + 1;
+  });
+  f.losPorts = Object.entries(losByPort).map(([k, n]) => { const [olt, slot, port] = k.split('|'); return { olt, port: `1/${slot}/${port}`, count: n }; })
+    .sort((a, b) => b.count - a.count);
+
+  // --- Redaman lemah (hanya yang online) ---
+  const weak = onus.filter(r => r.online && _num(r.rx_power) !== null && _num(r.rx_power) < REPORT_WEAK_RX)
+    .map(r => ({ olt: r.olt_name, iface: `1/${r.slot}/${r.port}:${r.onu_id}`, name: r.name, rx: _num(r.rx_power) }))
+    .sort((a, b) => a.rx - b.rx);
+  f.weak = { count: weak.length, critical: weak.filter(w => w.rx < -28).length, worst: weak.slice(0, 5) };
+
+  // --- Kesehatan OLT ---
+  f.oltHigh = db.prepare('SELECT olt_name, slot_index, card_type, cpu_load, mem_usage FROM olt_health WHERE cpu_load >= ? OR mem_usage >= ?')
+    .all(REPORT_HIGH_PCT, REPORT_HIGH_PCT).filter(r => !_isCctv(r.olt_name))
+    .map(r => ({ olt: r.olt_name, slot: r.card_type || ('Slot ' + r.slot_index), cpu: r.cpu_load, mem: r.mem_usage }));
+
+  // --- Polling SNMP (poll terakhir per OLT; basi bila > 10 menit atau gagal) ---
+  f.poll = db.prepare(`
+    SELECT olt_name, success, error_msg, polled_at,
+           CAST(strftime('%s','now','localtime') AS INTEGER) - CAST(strftime('%s', polled_at) AS INTEGER) AS age_s
+    FROM poll_log WHERE id IN (SELECT MAX(id) FROM poll_log GROUP BY olt_name)`)
+    .all().filter(r => !_isCctv(r.olt_name))
+    .map(r => ({ olt: r.olt_name, ok: !!r.success, error: r.error_msg, ageMin: Math.round((r.age_s || 0) / 60) }));
+  f.pollProblems = f.poll.filter(p => !p.ok || p.ageMin > 10);
+
+  // --- Aktivasi 24 jam terakhir ---
+  const h = db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(success),0) AS ok FROM history WHERE created_at >= CAST(strftime('%s','now','-1 day') AS INTEGER)").get();
+  f.activations = { total: h.n, ok: h.ok, failed: h.n - h.ok };
+
+  // --- Proxmox ---
+  try {
+    const px = await buildProxmoxSummary();
+    if (px.serverCount) {
+      f.proxmox = {
+        nodes: px.nodes.map(n => ({ server: n.server, node: n.node, online: n.online, cpu: n.cpu, memPct: n.memPct, diskPct: n.diskPct, running: n.guestsRunning, total: n.guestsTotal })),
+        unreachable: px.errors || [],
+      };
+    }
+  } catch (e) { f.proxmox = { nodes: [], unreachable: [{ server: '(semua)', message: e.message }] }; }
+  return f;
+}
+
+// Kesimpulan singkat dari AI — hanya angka agregat, tanpa nama/SN pelanggan.
+async function reportAiSummary(f) {
+  if (!AI_API_KEY) return '';
+  const agg = {
+    onu_total: f.totals, per_olt: f.olts,
+    los_terkonsentrasi_di_port: f.losPorts.filter(p => p.count >= 3).slice(0, 8),
+    redaman_lemah: { jumlah: f.weak.count, kritis_di_bawah_minus28: f.weak.critical },
+    kartu_olt_cpu_ram_tinggi: f.oltHigh,
+    polling_bermasalah: f.pollProblems.map(p => ({ olt: p.olt, ok: p.ok, umur_menit: p.ageMin })),
+    aktivasi_24_jam: f.activations,
+    proxmox: f.proxmox ? { node: f.proxmox.nodes, server_tak_terjangkau: f.proxmox.unreachable.map(u => u.server) } : null,
+  };
+  try {
+    const resp = await aiCallLLM([{ role: 'user', content: 'Data kondisi jaringan hari ini (JSON):\n' + JSON.stringify(agg) }], {
+      noTools: true, maxTokens: 1200,
+      system: [
+        'Kamu asisten NOC ISP. Tulis KESIMPULAN singkat untuk laporan harian Telegram dalam Bahasa Indonesia.',
+        'Format: 2 sampai 4 butir, tiap butir diawali "- ", maksimal 25 kata per butir. Tanpa pembuka/penutup, tanpa tabel.',
+        'Urutkan dari yang paling perlu ditindaklanjuti. Jika LOS terkonsentrasi di satu port (>=3 ONU), sebut sebagai kemungkinan masalah kabel feeder/ODP/splitter.',
+        'Jika semuanya normal, katakan singkat bahwa kondisi normal. HANYA gunakan data yang diberikan; jangan mengarang angka atau penyebab pasti.',
+        'Boleh pakai **tebal** seperlunya.',
+      ].join('\n'),
+    });
+    const msg = resp.choices && resp.choices[0] && resp.choices[0].message;
+    return ((msg && typeof msg.content === 'string') ? msg.content : '').trim();
+  } catch (e) {
+    console.error('[REPORT] Kesimpulan AI gagal:', e.message);
+    return '';
+  }
+}
+
+function reportFormat(f, aiText, whenLabel) {
+  const L = [];
+  const pctIcon = (p) => p >= REPORT_HIGH_PCT ? '🔴' : p >= 70 ? '🟡' : '🟢';
+  L.push('📊 <b>Laporan Harian NOC</b>');
+  L.push(`<i>${_rh(whenLabel)}</i>`);
+  L.push('');
+
+  // ONU
+  const t = f.totals;
+  L.push('<b>📡 ONU</b>');
+  if (!f.olts.length) L.push('Belum ada data ONU (tunggu 1 siklus polling).');
+  else {
+    f.olts.forEach(o => {
+      const off = o.total - o.online;
+      const detail = off ? ` · ${off} offline (LOS ${o.los}, DG ${o.dyingGasp}${o.otherOffline ? ', lain ' + o.otherOffline : ''})` : '';
+      L.push(`• <b>${_rh(o.olt)}</b>: ${o.online}/${o.total} online${detail}`);
+    });
+    L.push(`Total: <b>${t.online}/${t.total}</b> online · ${t.total - t.online} offline`);
+  }
+  L.push('');
+
+  // Perlu perhatian
+  const attn = [];
+  const bigLos = f.losPorts.filter(p => p.count >= 3);
+  if (t.los) attn.push(`🔴 <b>${t.los}</b> ONU LOS` + (bigLos.length ? ' — terkonsentrasi di: ' + bigLos.slice(0, 4).map(p => `${_rh(p.olt)} port ${p.port} (${p.count})`).join(', ') : ''));
+  if (f.weak.count) attn.push(`🟡 <b>${f.weak.count}</b> ONU redaman lemah (&lt; ${REPORT_WEAK_RX} dBm), ${f.weak.critical} kritis (&lt; -28)`);
+  f.weak.worst.forEach(w => attn.push(`   ↳ ${_rh(w.name || '(tanpa nama)')} · ${_rh(w.olt)} ${w.iface} · ${w.rx} dBm`));
+  if (attn.length) { L.push('<b>⚠️ Perlu perhatian</b>'); L.push(...attn); L.push(''); }
+
+  // OLT + polling
+  L.push('<b>🖥 OLT &amp; Polling</b>');
+  if (f.oltHigh.length) f.oltHigh.slice(0, 6).forEach(c => L.push(`🔴 ${_rh(c.olt)} ${_rh(c.slot)}: CPU ${c.cpu ?? '—'}% · RAM ${c.mem ?? '—'}%`));
+  else L.push('🟢 CPU/RAM kartu OLT normal');
+  if (f.pollProblems.length) f.pollProblems.forEach(p => L.push(`🔴 Polling ${_rh(p.olt)}: ${p.ok ? 'data basi ' + p.ageMin + ' menit' : 'GAGAL' + (p.error ? ' (' + _rh(String(p.error).slice(0, 60)) + ')' : '')}`));
+  else if (f.poll.length) L.push('🟢 Polling SNMP semua OLT normal');
+  L.push('');
+
+  // Aktivasi
+  L.push('<b>🧾 Aktivasi 24 jam terakhir</b>');
+  L.push(f.activations.total ? `${f.activations.ok} berhasil` + (f.activations.failed ? `, <b>${f.activations.failed} gagal</b>` : '') : 'Tidak ada aktivasi');
+  L.push('');
+
+  // Proxmox
+  if (f.proxmox) {
+    L.push('<b>🧩 Proxmox</b>');
+    f.proxmox.nodes.forEach(n => {
+      if (!n.online) L.push(`🔴 <b>${_rh(n.node)}</b> (${_rh(n.server)}): OFFLINE`);
+      else L.push(`${pctIcon(Math.max(n.cpu, n.memPct, n.diskPct))} <b>${_rh(n.node)}</b>: CPU ${n.cpu.toFixed(0)}% · RAM ${n.memPct.toFixed(0)}% · Disk ${n.diskPct.toFixed(0)}% · VM ${n.running}/${n.total}`);
+    });
+    f.proxmox.unreachable.forEach(u => L.push(`🔴 Server <b>${_rh(u.server)}</b> tidak terjangkau`));
+    L.push('');
+  }
+
+  if (aiText) {
+    L.push('<b>🤖 Kesimpulan</b>');
+    // escape dulu, baru ubah **tebal** -> <b>
+    L.push(_rh(aiText).replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>').replace(/^\s*[-*] /gm, '• '));
+    L.push('');
+  }
+  L.push('<i>Data dari cache polling ±1 menit.</i>');
+  return L.join('\n');
+}
+
+async function reportBuild(opts) {
+  opts = opts || {};
+  const cfg = reportGetConfig();
+  const f = await reportCollect();
+  const useAi = opts.ai !== undefined ? opts.ai : cfg.ai;
+  const aiText = useAi ? await reportAiSummary(f) : '';
+  const n = reportNowInTz();
+  const label = new Intl.DateTimeFormat('id-ID', { timeZone: REPORT_TZ, dateStyle: 'full' }).format(new Date()) + ' · ' + n.hhmm + ' ' + (REPORT_TZ === 'Asia/Jakarta' ? 'WIB' : REPORT_TZ);
+  return { text: reportFormat(f, aiText, label), facts: f, aiUsed: !!aiText };
+}
+
+// Kirim ke Telegram & BENAR-BENAR cek hasilnya (sendTelegram biasa menelan error). Pecah jika > 4000 karakter.
+function reportTelegramSend(text) {
+  const chunks = [];
+  let cur = '';
+  text.split('\n').forEach(line => {
+    if ((cur + '\n' + line).length > 3900) { chunks.push(cur); cur = line; } else cur = cur ? cur + '\n' + line : line;
+  });
+  if (cur) chunks.push(cur);
+  const sendOne = (chunk) => new Promise((resolve) => {
+    const body = JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: chunk, parse_mode: 'HTML', disable_web_page_preview: true });
+    const req = https.request({
+      hostname: 'api.telegram.org', path: `/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, method: 'POST', timeout: 15000,
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+    }, (res) => {
+      let d = ''; res.on('data', c => d += c);
+      res.on('end', () => { let desc = ''; try { desc = JSON.parse(d).description || ''; } catch (e) {} resolve({ ok: res.statusCode === 200, error: desc || ('HTTP ' + res.statusCode) }); });
+    });
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+    req.on('error', (e) => resolve({ ok: false, error: e.message }));
+    req.write(body); req.end();
+  });
+  return (async () => {
+    for (const c of chunks) { const r = await sendOne(c); if (!r.ok) return r; }
+    return { ok: true };
+  })();
+}
+
+// --- Scheduler: cek tiap 30 dtk; kirim sekali per hari ---
+let _reportBusy = false;
+let _reportLastAttempt = 0;
+async function reportTick() {
+  if (_reportBusy || !TELEGRAM_ENABLED) return;
+  try {
+    const cfg = reportGetConfig();
+    if (!cfg.enabled) return;
+    const n = reportNowInTz();
+    if (cfg.lastSent === n.date) return;
+    const [hh, mm] = cfg.time.split(':').map(Number);
+    const diff = n.minutes - (hh * 60 + mm);
+    if (diff < 0 || diff > REPORT_CATCHUP_MIN) return;
+    if (Date.now() - _reportLastAttempt < REPORT_RETRY_MS) return;
+    _reportBusy = true; _reportLastAttempt = Date.now();
+    const rep = await reportBuild();
+    const r = await reportTelegramSend(rep.text);
+    if (r.ok) { _setSetting('report_last_sent', n.date); console.log(`[REPORT] Laporan harian terkirim (${n.date} ${n.hhmm}, AI: ${rep.aiUsed ? 'ya' : 'tidak'})`); }
+    else console.error('[REPORT] Gagal kirim ke Telegram:', r.error, '— coba lagi ±5 menit');
+  } catch (e) {
+    console.error('[REPORT] Error:', e.message);
+  } finally { _reportBusy = false; }
+}
+setTimeout(reportTick, 20000);
+setInterval(reportTick, 30000);
+
+// --- API ---
+app.get('/api/report/config', requireAuth, (req, res) => {
+  res.json({ success: true, ...reportGetConfig(), tz: REPORT_TZ, telegramEnabled: TELEGRAM_ENABLED, aiAvailable: !!AI_API_KEY });
+});
+
+app.put('/api/report/config', requireAuth, (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ success: false, message: 'Akses ditolak' });
+  const { enabled, time, ai } = req.body || {};
+  if (time !== undefined && !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(time)))
+    return res.status(400).json({ success: false, message: 'Format jam harus HH:MM (00:00–23:59)' });
+  if (enabled !== undefined) _setSetting('report_enabled', enabled ? '1' : '0');
+  if (time !== undefined) _setSetting('report_time', time);
+  if (ai !== undefined) _setSetting('report_ai', ai ? '1' : '0');
+  // Jam diubah → izinkan kirim lagi hari ini bila jam baru belum lewat
+  if (time !== undefined) _setSetting('report_last_sent', '');
+  res.json({ success: true, message: 'Pengaturan laporan harian disimpan', ...reportGetConfig() });
+});
+
+// Pratinjau (tidak mengirim). ?ai=0 untuk melewatkan kesimpulan AI.
+app.get('/api/report/preview', requireAuth, async (req, res) => {
+  try {
+    const rep = await reportBuild({ ai: req.query.ai === '0' ? false : undefined });
+    res.json({ success: true, text: rep.text, aiUsed: rep.aiUsed });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+// Kirim sekarang (tidak mengubah status "sudah terkirim hari ini")
+app.post('/api/report/send-now', requireAuth, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ success: false, message: 'Akses ditolak' });
+  if (!TELEGRAM_ENABLED) return res.status(503).json({ success: false, message: 'TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID belum diset' });
+  try {
+    const rep = await reportBuild();
+    const r = await reportTelegramSend(rep.text);
+    if (!r.ok) return res.status(502).json({ success: false, message: 'Telegram menolak: ' + r.error });
+    res.json({ success: true, message: 'Laporan terkirim ke group Telegram', aiUsed: rep.aiUsed });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+// ============================================================
+// END PATCH: Ringkasan Harian
+// ============================================================
+
 // --- PORT ---
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+const httpServer = app.listen(PORT, () => {
   console.log(`Server berjalan di http://localhost:${PORT}`);
   console.log(`[POLLER] Background poller aktif, interval: ${POLL_INTERVAL_MS / 60000} menit`);
 });
+
+// OLT Terminal (CLI di browser) — butuh: npm install ws
+try {
+  require('./olt-terminal-backend')(app, httpServer, { requireAuth, OLT_CONFIG, db });
+  console.log('[OLT-TERMINAL] aktif (admin only)');
+} catch (e) {
+  console.warn('[OLT-TERMINAL] tidak aktif:', e.message, '— jalankan: npm install ws');
+}

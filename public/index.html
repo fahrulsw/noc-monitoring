@@ -3101,6 +3101,10 @@ document.addEventListener('DOMContentLoaded', function() {
             <span class="sidebar-dropdown-item-label">History</span>
             <span class="sidebar-dropdown-item-badge" id="sb-history-count">0</span>
           </div>
+          <div class="sidebar-dropdown-item" id="sb-oltterm" data-page="oltterm" style="display:none" onclick="selectOnuMenu('oltterm')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            <span class="sidebar-dropdown-item-label">OLT Terminal</span>
+          </div>
         </div>
       </div>
       <div class="sidebar-item" data-page="mikrotik" onclick="switchPage('mikrotik'); initMikrotikPage();">
@@ -3916,6 +3920,42 @@ document.addEventListener('DOMContentLoaded', function() {
       </div>
     </div><!-- /page-ffmpeg -->
 
+    <!-- ═══ PAGE: OLT TERMINAL ═══ -->
+    <div class="page-panel" id="page-oltterm">
+      <div class="page-header">
+        <div>
+          <div class="page-title-row">
+            <span class="page-title">OLT Terminal</span>
+            <span class="page-badge">CLI</span>
+          </div>
+          <div class="page-sub">Akses CLI OLT langsung dari browser — login otomatis, semua perintah dicatat</div>
+        </div>
+        <span class="olt-term-status" id="olt-term-status"><i></i><span id="olt-term-status-text">Terputus</span></span>
+      </div>
+      <div class="olt-term-body">
+        <div class="olt-term-toolbar">
+          <div class="pve-select-wrap">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="10" rx="2"/><path d="M6 7V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2"/></svg>
+            <select id="olt-term-select"><option value="">Memuat…</option></select>
+          </div>
+          <button class="olt-term-btn primary" id="olt-term-connect" onclick="oltTermConnect()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>CONNECT
+          </button>
+          <button class="olt-term-btn danger" id="olt-term-disconnect" onclick="oltTermDisconnect()" disabled>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>DISCONNECT
+          </button>
+          <button class="olt-term-btn" onclick="oltTermClear()">CLEAR</button>
+          <button class="olt-term-btn" onclick="oltTermToggleAudit()" style="margin-left:auto">RIWAYAT</button>
+        </div>
+        <div class="olt-term-wrap">
+          <div class="olt-term-titlebar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span id="olt-term-title">belum terhubung</span></div>
+          <div id="olt-term-screen"></div>
+          <div class="olt-term-empty" id="olt-term-empty">Pilih OLT lalu klik <b>CONNECT</b>.<br><span>Sesi diputus otomatis setelah 15 menit tanpa aktivitas.</span></div>
+        </div>
+        <div class="olt-term-audit" id="olt-term-audit" style="display:none"></div>
+      </div>
+    </div>
+
     <!-- ═══ PAGE: PROXMOX ═══ -->
     <div class="page-panel" id="page-proxmox">
       <div class="page-header">
@@ -4298,10 +4338,140 @@ document.addEventListener('DOMContentLoaded', function() {
   let startTime = null;
 
   // ─── SIDEBAR PAGE SWITCH ───
+
+  // ─── OLT TERMINAL ───
+  let oltTerm = null, oltFit = null, oltWs = null, oltTermReady = false, oltTermInit = false;
+
+  function oltTermIsAdmin() {
+    try { return ['admin', 'operator'].includes(window.__nocsUser && window.__nocsUser.role); } catch (e) { return false; }
+  }
+  // menu hanya tampil untuk admin & operator
+  (function () {
+    const el = document.getElementById('sb-oltterm');
+    if (el && oltTermIsAdmin()) el.style.display = '';
+  })();
+
+  function oltTermStatus(kind, text) {
+    const el = document.getElementById('olt-term-status');
+    el.className = 'olt-term-status ' + (kind || '');
+    document.getElementById('olt-term-status-text').textContent = text;
+  }
+  function oltTermTheme() {
+    const light = document.documentElement.classList.contains('light');
+    return light
+      ? { background: '#f8fafc', foreground: '#141922', cursor: '#0891a8', selectionBackground: 'rgba(8,145,168,.25)' }
+      : { background: '#080a10', foreground: '#d7e0ee', cursor: '#22d3ee', selectionBackground: 'rgba(34,211,238,.25)' };
+  }
+  async function initOltTermPage() {
+    if (!oltTermIsAdmin()) { showToast('fail', 'Akses ditolak', 'Terminal OLT hanya untuk admin / operator'); switchPage('dashboard'); return; }
+    if (!oltTermInit) {
+      oltTermInit = true;
+      try {
+        const r = await fetch('/api/olts');
+        const list = await r.json();
+        document.getElementById('olt-term-select').innerHTML = (Array.isArray(list) && list.length)
+          ? list.map(o => `<option value="${escHtml(o.name)}">${escHtml(o.name)} (${escHtml(o.host)})</option>`).join('')
+          : '<option value="">Belum ada OLT</option>';
+      } catch (e) { document.getElementById('olt-term-select').innerHTML = '<option value="">Gagal memuat OLT</option>'; }
+    }
+    setTimeout(oltTermResize, 60);
+  }
+  function oltTermEnsure() {
+    if (oltTerm) return true;
+    if (!window.Terminal || !window.FitAddon) { showToast('fail', 'Terminal belum siap', 'Library xterm gagal dimuat (cek koneksi internet / CDN)'); return false; }
+    oltTerm = new Terminal({ cursorBlink: true, fontFamily: "'Roboto Mono', Consolas, monospace", fontSize: 13, lineHeight: 1.25, scrollback: 5000, theme: oltTermTheme() });
+    oltFit = new FitAddon.FitAddon();
+    oltTerm.loadAddon(oltFit);
+    oltTerm.open(document.getElementById('olt-term-screen'));
+    oltTerm.onData(d => { if (oltWs && oltWs.readyState === 1) oltWs.send(JSON.stringify({ t: 'i', d })); });
+    window.addEventListener('resize', oltTermResize);
+    let _ro = 0; new ResizeObserver(() => { cancelAnimationFrame(_ro); _ro = requestAnimationFrame(oltTermResize); }).observe(document.getElementById('olt-term-screen'));
+    new MutationObserver(() => { if (oltTerm) oltTerm.options.theme = oltTermTheme(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return true;
+  }
+  function oltTermResize() {
+    if (!oltTerm || !oltFit) return;
+    const box = document.getElementById('olt-term-screen');
+    if (!box || !box.offsetWidth) return;          // halaman sedang tersembunyi
+    try { oltFit.fit(); } catch (e) { return; }
+    if (oltWs && oltWs.readyState === 1) oltWs.send(JSON.stringify({ t: 'r', cols: oltTerm.cols, rows: oltTerm.rows }));
+  }
+  async function oltTermConnect() {
+    const name = document.getElementById('olt-term-select').value;
+    if (!name) { showToast('fail', 'Pilih OLT', 'Belum ada OLT yang dipilih'); return; }
+    if (!oltTermEnsure()) return;
+    oltTermDisconnect(true);
+    document.getElementById('olt-term-empty').style.display = 'none';
+    oltTerm.reset();
+    oltTermStatus('busy', 'Menghubungkan…');
+    document.getElementById('olt-term-connect').disabled = true;
+    let ticket;
+    try {
+      const r = await fetch('/api/olt-terminal/ticket', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ olt: name }) });
+      const j = await r.json();
+      if (!j.success) throw new Error(j.message || 'Gagal meminta tiket');
+      ticket = j;
+    } catch (e) {
+      oltTermStatus('', 'Terputus'); document.getElementById('olt-term-connect').disabled = false;
+      oltTerm.writeln('\x1b[31m' + e.message + '\x1b[0m');
+      return;
+    }
+    const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+    const ws = new WebSocket(proto + location.host + ticket.path + '?ticket=' + encodeURIComponent(ticket.ticket));
+    oltWs = ws;
+    ws.onopen = () => {
+      oltTermStatus('busy', 'Login…');
+      document.getElementById('olt-term-title').textContent = name;
+      document.getElementById('olt-term-disconnect').disabled = false;
+      try { oltFit.fit(); } catch (e) {}
+      oltTerm.focus();
+      ws.send(JSON.stringify({ t: 'r', cols: oltTerm.cols, rows: oltTerm.rows }));
+    };
+    ws.onmessage = ev => {
+      let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+      if (m.t === 'o') { oltTerm.write(m.d); if (!oltTermReady) { oltTermReady = true; oltTermStatus('on', 'Terhubung'); } }
+      else if (m.t === 's') oltTerm.writeln('\r\n\x1b[' + (m.err ? '31' : '36') + 'm[' + m.msg + ']\x1b[0m');
+    };
+    ws.onclose = () => {
+      if (oltWs === ws) {
+        oltWs = null; oltTermReady = false;
+        oltTermStatus('', 'Terputus');
+        document.getElementById('olt-term-connect').disabled = false;
+        document.getElementById('olt-term-disconnect').disabled = true;
+        document.getElementById('olt-term-title').textContent = 'belum terhubung';
+      }
+    };
+    ws.onerror = () => { oltTerm.writeln('\r\n\x1b[31m[Koneksi WebSocket gagal — pastikan paket ws terpasang di server & reverse proxy mengizinkan WebSocket]\x1b[0m'); };
+  }
+  function oltTermDisconnect(silent) {
+    if (oltWs) { const w = oltWs; oltWs = null; oltTermReady = false; try { w.close(); } catch (e) {} }
+    if (!silent) {
+      oltTermStatus('', 'Terputus');
+      document.getElementById('olt-term-connect').disabled = false;
+      document.getElementById('olt-term-disconnect').disabled = true;
+      document.getElementById('olt-term-title').textContent = 'belum terhubung';
+    }
+  }
+  function oltTermClear() { if (oltTerm) { oltTerm.clear(); oltTerm.focus(); } }
+  async function oltTermToggleAudit() {
+    const box = document.getElementById('olt-term-audit');
+    if (box.style.display !== 'none') { box.style.display = 'none'; return; }
+    box.style.display = '';
+    box.innerHTML = '<div style="padding:18px;font-family:var(--mono);font-size:.72rem;color:var(--muted2)">Memuat…</div>';
+    try {
+      const r = await fetch('/api/olt-terminal/audit'); const j = await r.json();
+      if (!j.success) throw new Error(j.message || 'Gagal');
+      box.innerHTML = j.rows.length
+        ? '<table><thead><tr><th>Waktu</th><th>User</th><th>OLT</th><th>Aktivitas</th><th>Detail</th></tr></thead><tbody>' +
+          j.rows.map(x => `<tr><td>${escHtml(x.ts)}</td><td>${escHtml(x.username)}</td><td>${escHtml(x.olt)}</td><td>${escHtml(x.event)}</td><td class="${x.event === 'cmd' ? 'cmd' : ''}">${escHtml(x.detail)}</td></tr>`).join('') + '</tbody></table>'
+        : '<div style="padding:18px;font-family:var(--mono);font-size:.72rem;color:var(--muted2)">Belum ada riwayat.</div>';
+    } catch (e) { box.innerHTML = '<div style="padding:18px;color:var(--danger);font-size:.8rem">' + escHtml(e.message) + '</div>'; }
+  }
+
   function switchPage(name) {
     document.querySelectorAll('.sidebar-item[data-page]').forEach(el => el.classList.toggle('active', el.dataset.page === name));
     document.querySelectorAll('#onu-dropdown .sidebar-dropdown-item').forEach(el => el.classList.toggle('active', el.dataset.page === name));
-    const onuPages = ['activate', 'monitor', 'history'];
+    const onuPages = ['activate', 'monitor', 'history', 'oltterm'];
     const onuHeader = document.querySelector('#onu-dropdown .sidebar-dropdown-header');
     if (onuHeader) onuHeader.classList.toggle('active-parent', onuPages.includes(name));
     document.querySelectorAll('.page-panel').forEach(el => el.classList.toggle('active', el.id === 'page-' + name));
@@ -4311,14 +4481,18 @@ document.addEventListener('DOMContentLoaded', function() {
     if (name !== 'mikrotik') stopUptimeTimer();
     if (name !== 'uptime') stopUptimePollTimer();
     if (name !== 'proxmox') stopProxmoxPolling();
+    if (name === 'oltterm') setTimeout(oltTermResize, 80);
   }
 
   // Handler klik item di dalam dropdown "Manajemen ONU"
   function selectOnuMenu(page) {
     switchPage(page);
     if (page === 'monitor' && !monitorLoaded) loadMonitor();
-    document.getElementById('onu-dropdown').classList.remove('open');
-    closeMobileTools();
+    if (page === 'oltterm') initOltTermPage();
+    // Desktop: dropdown tetap terbuka setelah memilih item.
+    // Mode sempit/HP: bottom sheet ditutup setelah memilih.
+    const sheet = document.getElementById('mobile-tools-sheet');
+    if (sheet && getComputedStyle(sheet).display !== 'none') closeMobileTools();
   }
 
   // ─── SCAN RBL ───
@@ -10148,6 +10322,211 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closePppoeMo
 @keyframes toast-in  { from { opacity:0; transform: translateX(24px) scale(0.96); } to { opacity:1; transform: none; } }
 @keyframes toast-out { to   { opacity:0; transform: translateX(24px) scale(0.96); } }
 @keyframes toast-prog-anim { from { width: 100%; } to { width: 0; } }
+</style>
+
+<style id="olt-term-css">
+  .olt-term-body { flex:1; min-height:0; display:flex; flex-direction:column; gap:14px; padding:6px 24px 22px; overflow-y:auto; }
+  .olt-term-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .olt-term-btn { display:inline-flex; align-items:center; gap:7px; height:40px; padding:0 16px; border-radius:14px; border:1px solid var(--border2); background:var(--surface2); color:var(--muted); font-family:var(--mono); font-size:.7rem; font-weight:700; letter-spacing:.06em; cursor:pointer; transition:all .15s; }
+  .olt-term-btn:hover:not(:disabled) { border-color:var(--accent); color:var(--text); background:var(--accent-dim); }
+  .olt-term-btn.primary { background:linear-gradient(135deg,var(--accent),var(--accent-2)); color:var(--btn-primary-text); border-color:transparent; box-shadow:0 8px 20px var(--accent-glow); }
+  .olt-term-btn.primary:hover:not(:disabled) { color:var(--btn-primary-text); filter:brightness(1.06); transform:translateY(-1px); }
+  .olt-term-btn.danger { color:var(--danger); border-color:color-mix(in srgb,var(--danger) 40%,transparent); }
+  .olt-term-btn.danger:hover:not(:disabled) { background:color-mix(in srgb,var(--danger) 12%,transparent); border-color:var(--danger); color:var(--danger); }
+  .olt-term-btn:disabled { opacity:.4; cursor:not-allowed; }
+  .olt-term-status { display:inline-flex; align-items:center; gap:8px; padding:6px 14px; border-radius:999px; border:1px solid var(--border2); background:var(--surface2); font-family:var(--mono); font-size:.68rem; font-weight:700; letter-spacing:.06em; color:var(--muted2); }
+  .olt-term-status i { width:7px; height:7px; border-radius:50%; background:var(--muted2); }
+  .olt-term-status.on { color:var(--ok); border-color:color-mix(in srgb,var(--ok) 40%,transparent); }
+  .olt-term-status.on i { background:var(--ok); box-shadow:0 0 8px var(--ok); }
+  .olt-term-status.busy { color:var(--warn); } .olt-term-status.busy i { background:var(--warn); }
+  .olt-term-wrap { position:relative; flex:1; min-height:380px; display:flex; flex-direction:column; border-radius:22px; overflow:hidden; border:1px solid var(--border2); background:var(--term-bg); box-shadow:var(--shadow-card, 0 12px 30px rgba(0,0,0,.25)); }
+  .olt-term-titlebar { display:flex; align-items:center; gap:7px; padding:11px 16px; border-bottom:1px solid var(--border); font-family:var(--mono); font-size:.7rem; color:var(--muted2); background:color-mix(in srgb,var(--surface) 70%,transparent); }
+  .olt-term-titlebar .dot { width:11px; height:11px; border-radius:50%; } .olt-term-titlebar .r{background:#ff5f57} .olt-term-titlebar .y{background:#febc2e} .olt-term-titlebar .g{background:#28c840}
+  .olt-term-titlebar #olt-term-title { margin-left:8px; }
+  #olt-term-screen { flex:1; min-height:0; padding:10px 8px 8px 14px; }
+  #olt-term-screen .xterm-viewport { background:transparent !important; scrollbar-width:thin; }
+  .olt-term-empty { position:absolute; inset:42px 0 0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; text-align:center; font-size:.9rem; color:var(--muted); pointer-events:none; }
+  .olt-term-empty span { font-size:.74rem; color:var(--muted2); }
+  .olt-term-audit { border:1px solid var(--border); border-radius:18px; background:var(--surface); max-height:260px; overflow:auto; flex-shrink:0; }
+  .olt-term-audit table { width:100%; border-collapse:collapse; font-family:var(--mono); font-size:.7rem; }
+  .olt-term-audit th { position:sticky; top:0; background:var(--surface2); text-align:left; padding:9px 14px; color:var(--muted2); letter-spacing:.08em; text-transform:uppercase; font-size:.6rem; }
+  .olt-term-audit td { padding:8px 14px; border-top:1px solid var(--border); color:var(--muted); }
+  .olt-term-audit td.cmd { color:var(--accent); }
+  @media (max-width:700px) { .olt-term-body { padding:6px 12px 16px; flex:none; overflow:visible; } .olt-term-wrap { flex:none; height:62vh; min-height:320px; border-radius:18px; } }
+  #olt-term-screen { overflow:hidden; }
+</style>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js" async></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js" async></script>
+
+<style id="modern-refresh">
+/* ═══════════════════════════════════════════════════════════
+   MODERN REFRESH — gaya selaras halaman login
+   Hanya lapisan tampilan; tidak mengubah logika / ID elemen.
+   Hapus blok <style id="modern-refresh"> ini untuk kembali ke tampilan lama.
+   ═══════════════════════════════════════════════════════════ */
+:root {
+  --accent-2: #4fd1ff;
+  --r-card: 22px;
+  --r-ctl: 14px;
+  --glass: rgba(17,21,29,0.78);
+  --shadow-card: 0 1px 2px rgba(0,0,0,.10), 0 18px 44px rgba(0,0,0,.28);
+  --shadow-card-hover: 0 22px 54px rgba(0,0,0,.40);
+}
+:root.light {
+  --accent-2: #0ea5e9;
+  --glass: rgba(255,255,255,0.88);
+  --shadow-card: 0 1px 2px rgba(30,41,59,.06), 0 16px 38px rgba(30,41,59,.10);
+  --shadow-card-hover: 0 22px 50px rgba(30,41,59,.16);
+}
+
+/* Latar: glow + grid halus seperti panel login */
+body::after {
+  background:
+    radial-gradient(900px 520px at 92% -8%, var(--accent-dim), transparent 62%),
+    radial-gradient(760px 520px at -6% 104%, rgba(129,140,248,0.10), transparent 60%);
+}
+body::before {
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 46px 46px;
+  -webkit-mask-image: radial-gradient(ellipse at 50% 0%, #000 10%, transparent 72%);
+          mask-image: radial-gradient(ellipse at 50% 0%, #000 10%, transparent 72%);
+}
+
+/* Topbar kaca */
+.topbar {
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+}
+.logo-name { font-weight: 800; letter-spacing: -0.01em; }
+.topbar-welcome { border-radius: 999px; background: color-mix(in srgb, var(--surface2) 85%, transparent); }
+.status-pill, .theme-btn { border-radius: 999px; transition: all .15s ease; }
+.theme-btn:hover, .notif-bell-btn:hover { box-shadow: 0 0 0 4px var(--accent-dim); }
+.notif-dropdown { border-radius: 20px; box-shadow: var(--shadow-card-hover); }
+
+/* Judul halaman */
+.page-title { font-family: var(--sans); font-size: 1.15rem; font-weight: 800; letter-spacing: -0.02em; }
+.page-badge { padding: 3px 10px; }
+
+/* Sidebar: item berbentuk pill, aktif gradien + glow */
+.sidebar { background: color-mix(in srgb, var(--surface) 86%, transparent); }
+.sidebar-section-label { font-family: var(--mono); letter-spacing: .14em; }
+.sidebar-item { border-radius: 14px; padding: 10px 12px; font-weight: 600; }
+.sidebar-item:hover { background: var(--accent-dim); color: var(--text); }
+.sidebar-item.active {
+  color: var(--btn-primary-text);
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  box-shadow: 0 8px 20px var(--accent-glow);
+}
+.sidebar-item svg { width: 16px; height: 16px; }
+
+/* Sidebar mengambang & membulat */
+.app-shell { padding: 14px 0 14px 14px; gap: 0; }
+.sidebar {
+  border: 1px solid var(--border); border-radius: 26px;
+  box-shadow: var(--shadow-card);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+}
+.sidebar-nav { padding: 6px 10px; }
+.sidebar-section-label { padding-left: 20px; }
+@media (max-width: 700px) {
+  .app-shell { padding: 10px 10px 0; }
+  .sidebar { border-radius: 20px; }
+}
+
+/* Dropdown sidebar (Manajemen ONU, Tools) */
+.sidebar-dropdown-header { border-radius: 14px; padding: 10px 12px; font-weight: 600; }
+.sidebar-dropdown-header:hover { background: var(--accent-dim); }
+.sidebar-dropdown-header svg { width: 16px; height: 16px; }
+.sidebar-dropdown-header.active-parent {
+  color: var(--btn-primary-text);
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  box-shadow: 0 8px 20px var(--accent-glow);
+}
+.sidebar-dropdown.open .sidebar-dropdown-menu { padding: 4px 0 2px; }
+.sidebar-dropdown-item { border-radius: 12px; padding: 8px 12px 8px 38px; margin: 2px 4px; font-weight: 500; }
+.sidebar-dropdown-item.active { color: var(--accent); background: var(--accent-dim); box-shadow: inset 0 0 0 1px var(--accent-glow); font-weight: 600; }
+.sidebar-dropdown-item-badge { border-radius: 999px; }
+
+/* Bottom sheet (HP / sidebar sempit) */
+#mobile-tools-sheet { border-radius: 26px 26px 0 0 !important; }
+#mobile-tools-items a, #mobile-tools-items .sidebar-dropdown-item { border-radius: 16px !important; border-bottom: none !important; }
+#mobile-tools-sheet button { border-radius: 12px !important; }
+
+/* Kartu / panel */
+.dash-card, .form-panel, .mon-card, .pve-card, .pve-panel {
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-card);
+}
+.dash-card, .form-panel {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+.dash-card:hover { transform: translateY(-3px); border-color: var(--accent); box-shadow: var(--shadow-card-hover); }
+.section-label { letter-spacing: .14em; }
+
+/* Input */
+input[type="text"], input[type="password"], input[type="number"], input[type="search"],
+input[type="email"], input[type="url"], input[type="time"], input[type="date"], select, textarea {
+  border-radius: var(--r-ctl);
+  padding-top: 11px; padding-bottom: 11px;
+}
+select { padding-right: 34px; }
+input[type="text"]:hover, input[type="password"]:hover, input[type="number"]:hover, select:hover, textarea:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border2));
+}
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 4px var(--accent-dim) !important;
+  background: var(--surface);
+}
+.field label, .form-label { letter-spacing: .1em; }
+
+/* Tombol */
+.btn { border-radius: var(--r-ctl); padding: 10px 20px; font-weight: 700; }
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  box-shadow: 0 8px 22px var(--accent-glow);
+}
+.btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  filter: brightness(1.06); transform: translateY(-2px); box-shadow: 0 14px 30px var(--accent-glow);
+}
+.btn-primary:active:not(:disabled) { transform: translateY(0) scale(.99); }
+.btn-ghost:hover:not(:disabled) { background: var(--accent-dim); border-color: var(--accent); }
+.btn-scan { border-radius: var(--r-ctl); }
+.push-toggle { border-radius: 16px; }
+
+/* Modal */
+.modal-overlay { background: rgba(4,8,14,.62); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.modal-box, .detail-modal-box {
+  border-radius: 26px; background: var(--glass);
+  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  box-shadow: 0 30px 80px rgba(0,0,0,.5);
+}
+.modal-icon { border-radius: 14px; }
+.modal-btn { border-radius: 14px; font-weight: 700; }
+.modal-btn-danger { background: linear-gradient(135deg, var(--danger), #f43f5e); }
+
+/* Tabel & scroll */
+.table-scroll-wrap, #mon-table-wrap { border-radius: 16px; }
+* { scrollbar-width: thin; scrollbar-color: var(--border2) transparent; }
+
+/* Fokus keyboard */
+.sidebar-item:focus-visible, .btn:focus-visible, .theme-btn:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+
+@media (max-width: 700px) {
+  .sidebar-item { border-radius: 12px; padding: 8px 12px; flex: 0 0 auto; }
+  .sidebar-item.active { box-shadow: 0 4px 12px var(--accent-glow); }
+  .dash-card, .form-panel { border-radius: 18px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dash-card, .btn, .btn-primary { transition: none !important; }
+}
 </style>
 
 <script>

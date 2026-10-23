@@ -20,6 +20,7 @@
     "node-routeros": "^1.6.8",
     "node-ssh": "^13.2.1",
     "path-to-regexp": "^6.3.0",
-    "telnet-client": "^2.2.13"
+    "telnet-client": "^2.2.13",
+    "ws": "^8.22.0"
   }
 }

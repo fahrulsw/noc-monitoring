@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <script>
   // Terapkan tema tersimpan sebelum render (hindari kedip)
-  try { if (localStorage.getItem('nocs_login_theme') === 'light') document.documentElement.classList.add('light'); } catch (e) {}
+  try { if (localStorage.getItem('onu-theme') === 'light') document.documentElement.classList.add('light'); } catch (e) {}
 </script>
 <style>
   :root {
@@ -363,7 +363,7 @@
   }
   function toggleTheme() {
     var isLight = document.documentElement.classList.toggle('light');
-    try { localStorage.setItem('nocs_login_theme', isLight ? 'light' : 'dark'); } catch (e) {}
+    try { localStorage.setItem('onu-theme', isLight ? 'light' : 'dark'); } catch (e) {}
     syncThemeLabel();
   }
   syncThemeLabel();
