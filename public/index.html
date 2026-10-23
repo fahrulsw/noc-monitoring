@@ -2634,6 +2634,28 @@
     background:var(--surface2); border:1px solid var(--border); border-radius:999px; padding:4px 10px;
   }
 
+
+  /* ── Proxmox: layout node + panel samping (tidak ada ruang kosong) ── */
+  .pve-overview { display:block; margin-bottom:28px; }
+  .pve-overview .pve-grid { margin-bottom:0; }
+  .pve-overview.single { display:grid; grid-template-columns:minmax(340px,460px) minmax(0,1fr); gap:16px; align-items:stretch; }
+  .pve-overview.single .pve-grid { display:block; }
+  .pve-overview.single .pve-grid .pve-card { height:100%; }
+  .pve-overview.multi .pve-top { margin-top:16px; }
+  .pve-top { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px; }
+  .pve-top:empty { display:none; }
+  .pve-top-card { background:var(--surface); border:1px solid var(--border); border-radius:22px; padding:20px 22px; box-shadow:0 1px 2px rgba(0,0,0,.05), 0 10px 26px rgba(0,0,0,.13); }
+  .pve-top-title { display:flex; align-items:center; gap:10px; font-family:var(--mono); font-size:0.7rem; letter-spacing:.1em; text-transform:uppercase; color:var(--muted2); margin-bottom:16px; }
+  .pve-top-title .ico { width:30px; height:30px; border-radius:10px; display:grid; place-items:center; background:var(--accent-dim); color:var(--accent); }
+  .pve-top-row { display:grid; grid-template-columns:minmax(90px,150px) 1fr; align-items:center; gap:14px; padding:9px 0; border-top:1px dashed var(--border); }
+  .pve-top-title + .pve-top-row { border-top:none; padding-top:0; }
+  .pve-top-name { font-family:var(--mono); font-size:0.74rem; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pve-top-name small { display:block; color:var(--muted2); font-size:0.6rem; margin-top:2px; }
+  .pve-kv { display:grid; grid-template-columns:auto 1fr; gap:7px 14px; margin-top:16px; padding-top:14px; border-top:1px dashed var(--border); font-family:var(--mono); font-size:0.66rem; }
+  .pve-kv span:nth-child(odd) { color:var(--muted2); }
+  .pve-kv span:nth-child(even) { color:var(--text); text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  @media (max-width: 1000px) { .pve-overview.single { grid-template-columns:1fr; } }
+
   /* ── Proxmox: bar & pill ── */
   .pve-track { height:9px; border-radius:999px; background:var(--surface2); overflow:hidden; box-shadow:inset 0 0 0 1px var(--border); }
   .pve-fill { height:100%; border-radius:999px; transition:width .5s ease; }
@@ -3933,8 +3955,11 @@ document.addEventListener('DOMContentLoaded', function() {
         <div id="pve-summary" class="pve-stats"></div>
 
         <div class="pve-section-title"><span>Node</span></div>
-        <div id="pve-nodes" class="pve-grid">
-          <div class="pve-empty" style="grid-column:1/-1;">Pilih atau tambah server Proxmox.</div>
+        <div id="pve-overview" class="pve-overview">
+          <div id="pve-nodes" class="pve-grid">
+            <div class="pve-empty" style="grid-column:1/-1;">Pilih atau tambah server Proxmox.</div>
+          </div>
+          <div id="pve-top" class="pve-top"></div>
         </div>
 
         <div class="pve-section-title">
@@ -5168,6 +5193,8 @@ document.addEventListener('DOMContentLoaded', function() {
   function renderPveEmpty() {
     document.getElementById('pve-summary').innerHTML = '';
     document.getElementById('pve-nodes').innerHTML = '<div class="pve-empty" style="grid-column:1/-1;">Klik “+ SERVER” untuk menambahkan Proxmox.</div>';
+    document.getElementById('pve-top').innerHTML = '';
+    document.getElementById('pve-overview').className = 'pve-overview multi';
     document.getElementById('pve-guests-body').innerHTML = '';
     document.getElementById('pve-storages').innerHTML = '';
     document.getElementById('pve-guest-count').textContent = '';
@@ -5233,6 +5260,88 @@ document.addEventListener('DOMContentLoaded', function() {
     disk: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></svg>',
   };
 
+  // ── Detail tambahan node (load avg, swap, kernel, versi PVE) — di-cache 60 dtk ──
+  const pveNodeDetail = {};   // 'server|node' -> { ts, data }
+  async function pveLoadNodeDetails() {
+    if (!pveData || !pveSelected) return;
+    const srv = pveSelected;
+    const jobs = pveData.nodes.filter(n => n.online).map(async (n) => {
+      const key = srv + '|' + n.node;
+      const c = pveNodeDetail[key];
+      if (c && Date.now() - c.ts < 60000) return;
+      try {
+        const r = await fetch(`/api/proxmox/${encodeURIComponent(srv)}/node/${encodeURIComponent(n.node)}/status`);
+        const d = await r.json();
+        if (d && d.success) pveNodeDetail[key] = { ts: Date.now(), data: d };
+      } catch (e) {}
+    });
+    await Promise.all(jobs);
+    if (srv === pveSelected) renderPveNodes();
+  }
+  function pveNodeExtras(n) {
+    const c = pveNodeDetail[pveSelected + '|' + n.node];
+    if (!c) return '';
+    const d = c.data;
+    let h = '';
+    if (d.swap && d.swap.total > 0) {
+      const sp = (d.swap.used / d.swap.total) * 100;
+      h += pveMetric('Swap', sp.toFixed(1) + '%', sp, `${pveBytes(d.swap.used)} / ${pveBytes(d.swap.total)}`);
+    }
+    const kv = [];
+    if (d.loadavg && d.loadavg.length) kv.push(['Load avg', d.loadavg.map(x => Number(x).toFixed(2)).join(' · ')]);
+    if (d.cpuModel) kv.push(['CPU', escHtml(String(d.cpuModel).replace(/\(R\)|\(TM\)|CPU/g, '').replace(/\s+/g, ' ').trim()) + (d.cpuSockets ? ` (${d.cpuSockets} socket)` : '')]);
+    if (d.kernel) kv.push(['Kernel', escHtml(String(d.kernel).split(' ').slice(0, 2).join(' '))]);
+    if (d.pveVersion) { const m = String(d.pveVersion).match(/pve-manager\/([\d.]+)/); kv.push(['Proxmox VE', escHtml(m ? m[1] : d.pveVersion)]); }
+    if (kv.length) h += `<div class="pve-kv">${kv.map(([k, v]) => `<span>${k}</span><span title="${v}">${v}</span>`).join('')}</div>`;
+    return h;
+  }
+
+  function pveNodeCard(n) {
+    return `
+      <div class="pve-card ${n.online ? '' : 'off'}">
+        <div class="pve-card-head">
+          <div class="pve-card-ico">${PVE_ICON.node}</div>
+          <div><div class="pve-card-name">${escHtml(n.node)}</div><div class="pve-card-sub">${n.cpuCores} core · uptime ${pveUptime(n.uptime)}</div></div>
+          <span class="pve-pill ${n.online ? 'ok' : 'off'}">${n.online ? 'ONLINE' : 'OFFLINE'}</span>
+        </div>
+        ${pveMetric('CPU', n.cpu.toFixed(1) + '%', n.cpu)}
+        ${pveMetric('RAM', n.memPct.toFixed(1) + '%', n.memPct, `${pveBytes(n.memUsed)} / ${pveBytes(n.memTotal)}`)}
+        ${pveMetric('Disk root', n.diskPct.toFixed(1) + '%', n.diskPct, `${pveBytes(n.diskUsed)} / ${pveBytes(n.diskTotal)}`)}
+        ${n.online ? pveNodeExtras(n) : ''}
+      </div>`;
+  }
+
+  // Panel "resource teratas": VM/LXC yang paling banyak memakai CPU dan RAM
+  function pveTopPanel() {
+    const run = (pveData.guests || []).filter(g => g.status === 'running');
+    if (!run.length) return '';
+    const row = (g, pct, label) => `
+      <div class="pve-top-row">
+        <div class="pve-top-name" title="${escHtml(g.name)}">${escHtml(g.name)}<small>${g.type} ${g.vmid} · ${escHtml(g.node)}</small></div>
+        ${pveBar(pct, label)}
+      </div>`;
+    const byCpu = run.slice().sort((a, b) => b.cpu - a.cpu).slice(0, 5);
+    const byMem = run.slice().sort((a, b) => b.memUsed - a.memUsed).slice(0, 5);
+    return `
+      <div class="pve-top-card">
+        <div class="pve-top-title"><span class="ico">${PVE_ICON.cpu}</span>CPU tertinggi · VM/LXC</div>
+        ${byCpu.map(g => row(g, g.cpu)).join('')}
+      </div>
+      <div class="pve-top-card">
+        <div class="pve-top-title"><span class="ico">${PVE_ICON.ram}</span>RAM terbesar · VM/LXC</div>
+        ${byMem.map(g => row(g, g.memPct, `${pveBytes(g.memUsed)}`)).join('')}
+      </div>`;
+  }
+
+  function renderPveNodes() {
+    if (!pveData) return;
+    const ov = document.getElementById('pve-overview');
+    const single = pveData.nodes.length === 1;
+    ov.className = 'pve-overview ' + (single ? 'single' : 'multi');
+    document.getElementById('pve-nodes').innerHTML = pveData.nodes.map(pveNodeCard).join('') || '<div class="pve-empty" style="grid-column:1/-1;">Tidak ada node.</div>';
+    document.getElementById('pve-top').innerHTML = pveTopPanel();
+  }
+
   function renderPveAll() {
     if (!pveData) return;
     const s = pveData.summary;
@@ -5254,17 +5363,8 @@ document.addEventListener('DOMContentLoaded', function() {
       stat(PVE_ICON.cpu, avgCpu >= 85 ? 'danger' : avgCpu >= 70 ? 'warn' : 'ok', 'Rata-rata CPU', avgCpu.toFixed(1) + '%', 'semua node online') +
       stat(PVE_ICON.ram, memPct >= 85 ? 'danger' : memPct >= 70 ? 'warn' : 'ok', 'RAM Terpakai', memPct.toFixed(1) + '%', `${pveBytes(memUsed)} / ${pveBytes(memTotal)}`);
 
-    document.getElementById('pve-nodes').innerHTML = pveData.nodes.map(n => `
-      <div class="pve-card ${n.online ? '' : 'off'}">
-        <div class="pve-card-head">
-          <div class="pve-card-ico">${PVE_ICON.node}</div>
-          <div><div class="pve-card-name">${escHtml(n.node)}</div><div class="pve-card-sub">${n.cpuCores} core · uptime ${pveUptime(n.uptime)}</div></div>
-          <span class="pve-pill ${n.online ? 'ok' : 'off'}">${n.online ? 'ONLINE' : 'OFFLINE'}</span>
-        </div>
-        ${pveMetric('CPU', n.cpu.toFixed(1) + '%', n.cpu)}
-        ${pveMetric('RAM', n.memPct.toFixed(1) + '%', n.memPct, `${pveBytes(n.memUsed)} / ${pveBytes(n.memTotal)}`)}
-        ${pveMetric('Disk root', n.diskPct.toFixed(1) + '%', n.diskPct, `${pveBytes(n.diskUsed)} / ${pveBytes(n.diskTotal)}`)}
-      </div>`).join('') || '<div class="pve-empty" style="grid-column:1/-1;">Tidak ada node.</div>';
+    renderPveNodes();
+    pveLoadNodeDetails();
 
     renderPveGuests();
 
