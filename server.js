@@ -4319,3 +4319,11 @@ try {
 } catch (e) {
   console.warn('[OLT-TERMINAL] tidak aktif:', e.message, '— jalankan: npm install ws');
 }
+
+// Monitoring Router & Switch (SNMP)
+try {
+  require('./device-monitor-backend')(app, { requireAuth, db });
+  console.log('[NETDEV] monitoring router & switch aktif');
+} catch (e) {
+  console.warn('[NETDEV] tidak aktif:', e.message);
+}

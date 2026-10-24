@@ -3122,6 +3122,11 @@ document.addEventListener('DOMContentLoaded', function() {
         <span class="sidebar-item-label">Proxmox</span>
         <span class="sidebar-badge" id="sb-proxmox-count">—</span>
       </div>
+      <div class="sidebar-item" data-page="netdev" onclick="switchPage('netdev'); initNetDevPage();">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="14" width="20" height="7" rx="2"/><path d="M6 17.5h.01M10 17.5h.01"/><path d="M12 14V9"/><path d="M8.5 6.5a5 5 0 0 1 7 0"/><path d="M6 4a8.5 8.5 0 0 1 12 0"/></svg>
+        <span class="sidebar-item-label">Router &amp; Switch</span>
+        <span class="sidebar-badge" id="sb-netdev-count">—</span>
+      </div>
       <div class="sidebar-item" data-page="ai" onclick="switchPage('ai'); initAiPage();">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 7l1 2.5L15.5 10.5 13 11.5 12 14l-1-2.5L8.5 10.5 11 9.5z"/></svg>
         <span class="sidebar-item-label">AI Assistant</span>
@@ -3956,6 +3961,41 @@ document.addEventListener('DOMContentLoaded', function() {
       </div>
     </div>
 
+    <!-- ═══ PAGE: ROUTER & SWITCH ═══ -->
+    <div class="page-panel" id="page-netdev">
+      <div class="page-header">
+        <div>
+          <div class="page-title-row">
+            <span class="page-title">Router &amp; Switch</span>
+            <span class="page-badge">SNMP</span>
+          </div>
+          <div class="page-sub">Status, CPU, RAM, suhu, dan trafik port perangkat jaringan</div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <span id="nd-updated" style="font-family:var(--mono);font-size:0.65rem;color:var(--muted2);"></span>
+          <button class="term-action" onclick="ndLoad(true)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            REFRESH
+          </button>
+        </div>
+      </div>
+      <div class="nd-body" id="nd-body">
+        <div class="pve-stats" id="nd-stats"></div>
+        <div class="nd-toolbar">
+          <div class="nd-tabs" id="nd-tabs">
+            <button class="active" data-k="all" onclick="ndSetKind('all')">Semua</button>
+            <button data-k="router" onclick="ndSetKind('router')">Router</button>
+            <button data-k="switch" onclick="ndSetKind('switch')">Switch</button>
+          </div>
+          <div class="nd-search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="nd-q" placeholder="Cari nama / IP…" oninput="ndRender()"></div>
+          <button class="olt-term-btn primary" id="nd-add-btn" style="display:none;margin-left:auto" onclick="ndOpenForm()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>PERANGKAT
+          </button>
+        </div>
+        <div class="nd-grid" id="nd-grid"><div class="pve-empty" style="grid-column:1/-1;">Memuat…</div></div>
+      </div>
+    </div>
+
     <!-- ═══ PAGE: PROXMOX ═══ -->
     <div class="page-panel" id="page-proxmox">
       <div class="page-header">
@@ -4257,6 +4297,69 @@ document.addEventListener('DOMContentLoaded', function() {
 </div>
 
 <!-- MODAL: Tambah Server Proxmox -->
+
+<!-- MODAL: Detail perangkat -->
+<div id="nd-detail" class="nd-overlay" onclick="if(event.target===this)ndCloseDetail()">
+  <div class="nd-box wide">
+    <div class="nd-box-head">
+      <div class="pve-card-ico" id="nd-d-ico"></div>
+      <div style="min-width:0;flex:1"><div class="pve-card-name" id="nd-d-name" style="font-size:1rem"></div><div class="pve-card-sub" id="nd-d-sub"></div></div>
+      <span class="pve-pill" id="nd-d-pill"></span>
+      <button class="nd-x" onclick="ndCloseDetail()" aria-label="Tutup"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="nd-box-body">
+      <div class="pve-foot" id="nd-d-chips" style="margin:0 0 16px;padding:0;border:none"></div>
+      <div class="nd-range">
+        <span>Riwayat</span>
+        <select id="nd-hours" onchange="ndLoadHistory()"><option value="6">6 jam</option><option value="24" selected>24 jam</option><option value="168">7 hari</option></select>
+      </div>
+      <div class="nd-charts" id="nd-charts"></div>
+      <div class="nd-if-head">
+        <b>Interface</b>
+        <label class="nd-check"><input type="checkbox" id="nd-if-up" onchange="ndRenderIfaces()" checked> hanya yang UP</label>
+        <div class="nd-search small"><input type="text" id="nd-if-q" placeholder="Cari port…" oninput="ndRenderIfaces()"></div>
+      </div>
+      <div class="nd-if-wrap" id="nd-ifaces"></div>
+    </div>
+    <div class="nd-box-foot" id="nd-d-admin" style="display:none">
+      <button class="btn btn-ghost" onclick="ndPollNow()">Poll sekarang</button>
+      <button class="btn btn-ghost" onclick="ndEditCurrent()">Edit</button>
+      <button class="btn btn-ghost" id="nd-d-del" style="color:var(--danger);border-color:rgba(251,113,133,.35)" onclick="ndDeleteCurrent()">Hapus</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Tambah / edit perangkat -->
+<div id="nd-form" class="nd-overlay" onclick="if(event.target===this)ndCloseForm()">
+  <div class="nd-box">
+    <div class="pve-modal-title"><span class="ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="10" rx="2"/><line x1="6" y1="12" x2="6.01" y2="12"/><line x1="10" y1="12" x2="10.01" y2="12"/></svg></span><span id="nd-f-title" style="width:auto;height:auto;background:none">TAMBAH PERANGKAT</span></div>
+    <input type="hidden" id="nd-f-id">
+    <div style="display:flex;flex-direction:column;gap:13px;">
+      <div><label>Nama *</label><input type="text" id="nd-f-name" placeholder="misal: RB-GATEWAY"></div>
+      <div style="display:grid;grid-template-columns:1fr 100px;gap:10px;">
+        <div><label>IP / Hostname *</label><input type="text" id="nd-f-host" placeholder="10.0.0.1"></div>
+        <div><label>Port SNMP</label><input type="text" id="nd-f-port" placeholder="161" value="161"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div><label>Jenis</label><select id="nd-f-kind"><option value="router">Router</option><option value="switch">Switch</option></select></div>
+        <div><label>Merek</label><select id="nd-f-vendor"><option value="auto">Otomatis (deteksi)</option><option value="mikrotik">Mikrotik</option><option value="cisco">Cisco</option><option value="huawei">Huawei</option><option value="generic">Lainnya (standar)</option></select></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 110px;gap:10px;">
+        <div><label>SNMP Community</label><input type="password" id="nd-f-comm" placeholder="public" autocomplete="new-password"></div>
+        <div><label>Versi</label><select id="nd-f-ver"><option value="2c">v2c</option><option value="1">v1</option></select></div>
+      </div>
+      <label class="nd-check" style="margin-top:2px"><input type="checkbox" id="nd-f-enabled" checked> Aktifkan monitoring</label>
+      <div style="font-family:var(--mono);font-size:0.64rem;color:var(--muted2);line-height:1.6;background:var(--surface2);border:1px solid var(--border);border-radius:14px;padding:10px 14px;">Aktifkan SNMP di perangkat dan izinkan IP server NOCS. Mikrotik: <b>IP → SNMP</b>. Saat mengedit, kosongkan Community jika tidak ingin mengubahnya.</div>
+      <div id="nd-f-msg" class="pve-modal-msg"></div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:22px;justify-content:flex-end;">
+      <button class="btn btn-ghost" onclick="ndCloseForm()">Batal</button>
+      <button class="btn btn-ghost" onclick="ndTestForm()" style="color:var(--info);border-color:rgba(77,184,255,0.3);">Test Koneksi</button>
+      <button class="btn btn-primary" onclick="ndSubmitForm()">Simpan</button>
+    </div>
+  </div>
+</div>
+
 <div id="pve-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);z-index:9999;align-items:center;justify-content:center;">
   <div class="pve-modal-box">
     <div class="pve-modal-title">
@@ -4468,6 +4571,230 @@ document.addEventListener('DOMContentLoaded', function() {
     } catch (e) { box.innerHTML = '<div style="padding:18px;color:var(--danger);font-size:.8rem">' + escHtml(e.message) + '</div>'; }
   }
 
+
+  // ─── ROUTER & SWITCH (SNMP) ───
+  let ndDevices = [], ndKind = 'all', ndTimer = null, ndInit = false, ndCur = null, ndCurIfaces = [];
+  const ND_ICON = {
+    router: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="14" width="20" height="7" rx="2"/><path d="M6 17.5h.01M10 17.5h.01"/><path d="M12 14V9"/><path d="M8.5 6.5a5 5 0 0 1 7 0"/><path d="M6 4a8.5 8.5 0 0 1 12 0"/></svg>',
+    switch: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="8" width="20" height="8" rx="2"/><path d="M6 12h.01M10 12h.01M14 12h.01M18 12h.01"/><path d="M6 8V5M12 8V5M18 8V5"/></svg>'
+  };
+  const ndIsAdmin = () => { try { return (window.__nocsUser && window.__nocsUser.role) === 'admin'; } catch (e) { return false; } };
+  const ndCanManage = () => { try { return ['admin', 'operator'].includes(window.__nocsUser && window.__nocsUser.role); } catch (e) { return false; } };
+
+  function ndFmtBps(b) {
+    if (b == null) return '—';
+    if (b >= 1e9) return (b / 1e9).toFixed(2) + ' Gbps';
+    if (b >= 1e6) return (b / 1e6).toFixed(1) + ' Mbps';
+    if (b >= 1e3) return (b / 1e3).toFixed(0) + ' Kbps';
+    return Math.round(b) + ' bps';
+  }
+  function ndAgo(ts) {
+    if (!ts) return '—';
+    const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+    if (s < 60) return s + ' dtk lalu';
+    if (s < 3600) return Math.floor(s / 60) + ' mnt lalu';
+    if (s < 86400) return Math.floor(s / 3600) + ' jam lalu';
+    return Math.floor(s / 86400) + ' hari lalu';
+  }
+  async function ndApi(method, url, body) {
+    const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+    return r.json().catch(() => ({ success: false, message: 'Respon server tidak valid (HTTP ' + r.status + ')' }));
+  }
+
+  function initNetDevPage() {
+    document.getElementById('nd-add-btn').style.display = ndCanManage() ? '' : 'none';
+    ndLoad();
+    if (!ndTimer) ndTimer = setInterval(() => { if (document.getElementById('page-netdev').classList.contains('active')) ndLoad(); }, 30000);
+    ndInit = true;
+  }
+  function stopNetDevPolling() { if (ndTimer) { clearInterval(ndTimer); ndTimer = null; } }
+
+  async function ndLoad(manual) {
+    const j = await ndApi('GET', '/api/net-devices');
+    if (!j.success) {
+      document.getElementById('nd-grid').innerHTML = `<div class="pve-empty" style="grid-column:1/-1;color:var(--danger)">${escHtml(j.message || 'Gagal memuat')}</div>`;
+      return;
+    }
+    ndDevices = j.devices;
+    document.getElementById('nd-updated').textContent = 'Update ' + new Date().toLocaleTimeString('id-ID');
+    ndRender();
+    const el = document.getElementById('sb-netdev-count');
+    if (el) el.textContent = ndDevices.length ? (ndDevices.filter(d => d.up === false).length ? ndDevices.filter(d => d.up === false).length + '↓' : ndDevices.length) : '—';
+    if (manual) showToast('ok', 'Diperbarui', ndDevices.length + ' perangkat');
+  }
+  function ndSetKind(k) {
+    ndKind = k;
+    document.querySelectorAll('#nd-tabs button').forEach(b => b.classList.toggle('active', b.dataset.k === k));
+    ndRender();
+  }
+  function ndRender() {
+    const q = (document.getElementById('nd-q').value || '').toLowerCase().trim();
+    const all = ndDevices;
+    const up = all.filter(d => d.up === true).length, down = all.filter(d => d.up === false).length;
+    const hot = all.filter(d => d.up && d.cpu != null).sort((a, b) => b.cpu - a.cpu)[0];
+    const stat = (cls, ico, label, val, sub) => `<div class="pve-stat"><div class="pve-stat-icon ${cls}">${ico}</div><div><div class="pve-stat-label">${label}</div><div class="pve-stat-val">${val}</div><div class="pve-stat-sub">${sub}</div></div></div>`;
+    const I = d => `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+    document.getElementById('nd-stats').innerHTML =
+      stat('', I('<rect x="2" y="7" width="20" height="10" rx="2"/><path d="M6 12h.01M10 12h.01"/>'), 'Perangkat', all.length, `${all.filter(d => d.kind === 'router').length} router · ${all.filter(d => d.kind === 'switch').length} switch`) +
+      stat('ok', I('<polyline points="20 6 9 17 4 12"/>'), 'Online', up, all.length ? 'semua normal' : '—') +
+      stat(down ? 'danger' : 'ok', I('<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>'), 'Offline', down, down ? all.filter(d => d.up === false).map(d => escHtml(d.name)).slice(0, 2).join(', ') : 'tidak ada') +
+      stat(hot && hot.cpu >= 70 ? 'warn' : '', I('<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/>'), 'CPU tertinggi', hot ? hot.cpu.toFixed(0) + '%' : '—', hot ? escHtml(hot.name) : 'belum ada data');
+
+    const list = all.filter(d => (ndKind === 'all' || d.kind === ndKind) && (!q || d.name.toLowerCase().includes(q) || d.host.toLowerCase().includes(q)));
+    const grid = document.getElementById('nd-grid');
+    if (!all.length) { grid.innerHTML = `<div class="pve-empty" style="grid-column:1/-1;">Belum ada perangkat.${ndCanManage() ? ' Klik <b>+ PERANGKAT</b> untuk menambah.' : ''}</div>`; return; }
+    if (!list.length) { grid.innerHTML = '<div class="pve-empty" style="grid-column:1/-1;">Tidak ada yang cocok.</div>'; return; }
+    grid.innerHTML = list.map(ndCard).join('');
+  }
+  function ndCard(d) {
+    const state = d.up === null ? 'idle' : d.up ? 'ok' : 'off';
+    const label = d.up === null ? 'MENUNGGU' : d.up ? 'UP' : 'DOWN';
+    let body;
+    if (d.up) {
+      const chips = [
+        d.temp != null ? `<span class="pve-chip">🌡 ${d.temp.toFixed(0)}°C</span>` : '',
+        d.uptime_s != null ? `<span class="pve-chip">⏱ ${pveUptime(d.uptime_s)}</span>` : '',
+        d.latency != null ? `<span class="pve-chip">⇄ ${d.latency.toFixed(d.latency < 10 ? 1 : 0)} ms</span>` : '',
+        d.if_total ? `<span class="pve-chip">▣ ${d.if_up}/${d.if_total} port</span>` : ''
+      ].join('');
+      body = (d.cpu != null ? pveMetric('CPU', d.cpu.toFixed(0) + '%', d.cpu) : '') +
+             (d.mem_pct != null ? pveMetric('RAM', d.mem_pct.toFixed(0) + '%', d.mem_pct) : '') +
+             `<div class="pve-foot">${chips || '<span class="pve-chip">tidak ada metrik tambahan</span>'}</div>`;
+    } else if (d.up === false) {
+      body = `<div class="nd-down-msg">${escHtml(d.last_error || 'Tidak merespon')}<br>terakhir dicek ${ndAgo(d.last_poll)}</div>`;
+    } else {
+      body = '<div class="pve-empty" style="padding:18px 0">Menunggu polling pertama…</div>';
+    }
+    return `<div class="pve-card nd-card ${d.up === false ? 'down' : ''}" onclick="ndOpenDetail(${d.id})">
+      <div class="pve-card-head">
+        <div class="pve-card-ico ${d.kind}">${ND_ICON[d.kind] || ND_ICON.router}</div>
+        <div style="min-width:0"><div class="pve-card-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(d.name)}</div><div class="pve-card-sub">${escHtml(d.host)} · <span class="nd-vendor">${escHtml(d.vendor)}</span>${d.enabled ? '' : ' · nonaktif'}</div></div>
+        <span class="pve-pill ${state}">${label}</span>
+      </div>${body}</div>`;
+  }
+
+  // ── detail ──
+  async function ndOpenDetail(id) {
+    ndCur = id;
+    document.getElementById('nd-detail').classList.add('show');
+    document.getElementById('nd-d-admin').style.display = ndCanManage() ? '' : 'none';
+    document.getElementById('nd-ifaces').innerHTML = '<div class="pve-empty" style="padding:24px">Memuat…</div>';
+    document.getElementById('nd-charts').innerHTML = '';
+    const j = await ndApi('GET', '/api/net-devices/' + id);
+    if (!j.success) { showToast('fail', 'Gagal', j.message || 'Tidak bisa memuat detail'); ndCloseDetail(); return; }
+    const d = j.device; ndCurIfaces = j.interfaces;
+    document.getElementById('nd-d-ico').className = 'pve-card-ico ' + d.kind;
+    document.getElementById('nd-d-ico').innerHTML = ND_ICON[d.kind] || ND_ICON.router;
+    document.getElementById('nd-d-name').textContent = d.name;
+    document.getElementById('nd-d-sub').textContent = `${d.host} · ${d.vendor}${d.sys_descr ? ' · ' + d.sys_descr : ''}`;
+    const pill = document.getElementById('nd-d-pill');
+    pill.className = 'pve-pill ' + (d.up === null ? 'idle' : d.up ? 'ok' : 'off');
+    pill.textContent = d.up === null ? 'MENUNGGU' : d.up ? 'UP' : 'DOWN';
+    document.getElementById('nd-d-chips').innerHTML = [
+      d.cpu != null ? `CPU ${d.cpu.toFixed(0)}%` : '', d.mem_pct != null ? `RAM ${d.mem_pct.toFixed(0)}%` : '',
+      d.temp != null ? `🌡 ${d.temp.toFixed(0)}°C` : '', d.uptime_s != null ? `⏱ ${pveUptime(d.uptime_s)}` : '',
+      d.latency != null ? `⇄ ${d.latency.toFixed(1)} ms` : '', `dicek ${ndAgo(d.last_poll)}`
+    ].filter(Boolean).map(t => `<span class="pve-chip">${escHtml(t)}</span>`).join('') +
+      (d.up === false && d.last_error ? `<span class="pve-chip" style="color:var(--danger)">${escHtml(d.last_error)}</span>` : '');
+    ndRenderIfaces();
+    ndLoadHistory();
+  }
+  function ndCloseDetail() { document.getElementById('nd-detail').classList.remove('show'); ndCur = null; }
+
+  function ndRenderIfaces() {
+    const onlyUp = document.getElementById('nd-if-up').checked, q = (document.getElementById('nd-if-q').value || '').toLowerCase();
+    const rows = ndCurIfaces.filter(i => (!onlyUp || i.oper === 1) && (!q || (i.name + ' ' + (i.alias || '')).toLowerCase().includes(q)));
+    if (!rows.length) { document.getElementById('nd-ifaces').innerHTML = '<div class="pve-empty" style="padding:24px">Tidak ada interface' + (onlyUp ? ' yang UP' : '') + '.</div>'; return; }
+    document.getElementById('nd-ifaces').innerHTML = '<table><thead><tr><th>Port</th><th>Status</th><th>Speed</th><th style="text-align:right">↓ Masuk</th><th style="text-align:right">↑ Keluar</th></tr></thead><tbody>' +
+      rows.map(i => {
+        const st = i.admin === 2 ? ['dis', 'disabled'] : i.oper === 1 ? ['up', 'up'] : ['down', 'down'];
+        const sp = i.speed_mbps ? (i.speed_mbps >= 1000 ? i.speed_mbps / 1000 + ' Gbps' : i.speed_mbps + ' Mbps') : '—';
+        return `<tr><td class="n">${escHtml(i.name)}${i.alias ? `<small>${escHtml(i.alias)}</small>` : ''}</td><td><span class="nd-dot ${st[0]}"></span>${st[1]}</td><td>${sp}</td><td class="r">${ndFmtBps(i.in_bps)}</td><td class="r">${ndFmtBps(i.out_bps)}</td></tr>`;
+      }).join('') + '</tbody></table>';
+  }
+
+  async function ndLoadHistory() {
+    if (!ndCur) return;
+    const id = ndCur, hours = document.getElementById('nd-hours').value;
+    const j = await ndApi('GET', `/api/net-devices/${id}/history?hours=${hours}`);
+    if (id !== ndCur) return;
+    const s = (j.success && j.samples) || [];
+    const box = document.getElementById('nd-charts');
+    if (s.length < 2) { box.innerHTML = '<div class="pve-empty" style="grid-column:1/-1;padding:20px">Data riwayat belum cukup — tunggu beberapa menit.</div>'; return; }
+    box.innerHTML = ndChart(s, 'cpu', 'CPU', '%', 100, 'var(--accent)') + ndChart(s, 'mem_pct', 'RAM', '%', 100, '#818cf8') +
+      ndChart(s, 'latency', 'Latency', ' ms', null, 'var(--warn)') + (s.some(x => x.temp != null) ? ndChart(s, 'temp', 'Suhu', '°C', null, 'var(--danger)') : '');
+  }
+  function ndChart(samples, key, title, unit, fixedMax, color) {
+    const vals = samples.map(x => x[key]), nums = vals.filter(v => v != null);
+    if (!nums.length) return '';
+    const W = 300, H = 64, max = fixedMax || Math.max(1, Math.max(...nums) * 1.15), t0 = samples[0].ts, t1 = samples[samples.length - 1].ts || t0 + 1;
+    const X = ts => ((ts - t0) / Math.max(1, t1 - t0)) * W, Y = v => H - 3 - (Math.min(v, max) / max) * (H - 8);
+    let d = '', run = false;
+    samples.forEach((p, i) => { const v = vals[i]; if (v == null) { run = false; return; } d += (run ? 'L' : 'M') + X(p.ts).toFixed(1) + ' ' + Y(v).toFixed(1); run = true; });
+    const area = d.startsWith('M') ? d + `L${X(samples[samples.length - 1].ts).toFixed(1)} ${H}L${X(t0).toFixed(1)} ${H}Z` : '';
+    // blok merah saat perangkat sempat DOWN
+    let down = '';
+    samples.forEach((p, i) => { if (!p.up) { const x0 = X(p.ts), x1 = i + 1 < samples.length ? X(samples[i + 1].ts) : W; down += `<rect x="${x0.toFixed(1)}" y="0" width="${Math.max(2, x1 - x0).toFixed(1)}" height="${H}" fill="var(--danger)" opacity=".18"/>`; } });
+    const last = nums[nums.length - 1], avg = nums.reduce((a, b) => a + b, 0) / nums.length;
+    const f = v => (v >= 100 ? v.toFixed(0) : v.toFixed(1)) + unit;
+    const tf = ts => new Date(ts).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    return `<div class="nd-chart"><div class="nd-chart-head"><span>${title}</span><b>${f(last)}</b></div>
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${down}<path d="${area}" fill="${color}" opacity=".12"/><path d="${d}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>
+      <div class="nd-chart-foot"><span>${tf(t0)}</span><span>rata-rata ${f(avg)} · maks ${f(Math.max(...nums))}</span><span>${tf(t1)}</span></div></div>`;
+  }
+
+  // ── admin: tambah / edit / hapus ──
+  function ndFormMsg(t, kind) {
+    const el = document.getElementById('nd-f-msg'); el.style.display = t ? 'block' : 'none'; el.textContent = t || '';
+    el.style.background = kind === 'ok' ? 'rgba(52,211,153,.12)' : 'rgba(251,113,133,.12)'; el.style.color = kind === 'ok' ? 'var(--ok)' : 'var(--danger)';
+  }
+  async function ndOpenForm(id) {
+    ndFormMsg('');
+    const set = (k, v) => { document.getElementById('nd-f-' + k).value = v; };
+    set('id', id || ''); document.getElementById('nd-f-title').textContent = id ? 'EDIT PERANGKAT' : 'TAMBAH PERANGKAT';
+    if (id) {
+      const j = await ndApi('GET', `/api/net-devices/${id}/config`);
+      if (!j.success) { showToast('fail', 'Gagal', j.message); return; }
+      const c = j.config; set('name', c.name); set('host', c.host); set('port', c.port); set('kind', c.kind); set('vendor', c.vendor); set('ver', c.snmp_version); set('comm', '');
+      document.getElementById('nd-f-comm').placeholder = '(tidak diubah)'; document.getElementById('nd-f-enabled').checked = !!c.enabled;
+    } else {
+      set('name', ''); set('host', ''); set('port', '161'); set('kind', 'router'); set('vendor', 'auto'); set('ver', '2c'); set('comm', '');
+      document.getElementById('nd-f-comm').placeholder = 'public'; document.getElementById('nd-f-enabled').checked = true;
+    }
+    document.getElementById('nd-form').classList.add('show');
+  }
+  function ndCloseForm() { document.getElementById('nd-form').classList.remove('show'); }
+  function ndFormData() {
+    const g = k => document.getElementById('nd-f-' + k).value.trim();
+    return { id: g('id') || undefined, name: g('name'), host: g('host'), port: g('port'), kind: g('kind'), vendor: g('vendor'), snmp_version: g('ver'), community: document.getElementById('nd-f-comm').value, enabled: document.getElementById('nd-f-enabled').checked };
+  }
+  async function ndTestForm() {
+    ndFormMsg('Menguji koneksi…', 'ok');
+    const j = await ndApi('POST', '/api/net-devices/test', ndFormData());
+    j.success ? ndFormMsg(`✓ Terhubung (${j.rtt} ms) · ${j.sys_name || '-'} · terdeteksi: ${j.vendor}`, 'ok') : ndFormMsg(j.message || 'Gagal', 'err');
+  }
+  async function ndSubmitForm() {
+    const b = ndFormData();
+    const j = b.id ? await ndApi('PUT', '/api/net-devices/' + b.id, b) : await ndApi('POST', '/api/net-devices', b);
+    if (!j.success) { ndFormMsg(j.message || 'Gagal menyimpan', 'err'); return; }
+    ndCloseForm(); showToast('ok', 'Tersimpan', b.name); setTimeout(() => ndLoad(), 1500); ndLoad();
+  }
+  function ndEditCurrent() { const id = ndCur; ndCloseDetail(); ndOpenForm(id); }
+  async function ndPollNow() {
+    const id = ndCur; showToast('gen', 'Polling…', 'Mengambil data terbaru');
+    const j = await ndApi('POST', `/api/net-devices/${id}/poll`);
+    await ndLoad(); if (id === ndCur) ndOpenDetail(id);
+    if (!j.success || !j.up) showToast('fail', 'Tidak merespon', (j && j.error) || j.message || '');
+  }
+  async function ndDeleteCurrent() {
+    const d = ndDevices.find(x => x.id === ndCur); if (!d) return;
+    const ok = await showConfirm({ title: 'Hapus Perangkat?', body: 'Perangkat dan seluruh riwayat monitoringnya akan dihapus:', target: d.name, confirmLabel: 'Ya, Hapus' });
+    if (!ok) return;
+    const j = await ndApi('DELETE', '/api/net-devices/' + d.id);
+    if (j.success) { ndCloseDetail(); showToast('ok', 'Terhapus', d.name); ndLoad(); } else showToast('fail', 'Gagal', j.message || '');
+  }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { ndCloseForm(); ndCloseDetail(); } });
+
   function switchPage(name) {
     document.querySelectorAll('.sidebar-item[data-page]').forEach(el => el.classList.toggle('active', el.dataset.page === name));
     document.querySelectorAll('#onu-dropdown .sidebar-dropdown-item').forEach(el => el.classList.toggle('active', el.dataset.page === name));
@@ -4481,6 +4808,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (name !== 'mikrotik') stopUptimeTimer();
     if (name !== 'uptime') stopUptimePollTimer();
     if (name !== 'proxmox') stopProxmoxPolling();
+    if (name !== 'netdev') stopNetDevPolling();
     if (name === 'oltterm') setTimeout(oltTermResize, 80);
   }
 
@@ -10358,6 +10686,57 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closePppoeMo
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
 <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js" async></script>
 <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js" async></script>
+
+<style id="nd-css">
+  .nd-body { flex:1; min-height:0; overflow-y:auto; padding:6px 24px 26px; scrollbar-width:thin; scrollbar-color:var(--border2) transparent; }
+  .nd-toolbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
+  .nd-tabs { display:inline-flex; gap:4px; padding:4px; border-radius:999px; background:var(--surface2); border:1px solid var(--border); }
+  .nd-tabs button { border:none; background:none; cursor:pointer; padding:7px 16px; border-radius:999px; font-family:var(--mono); font-size:.68rem; font-weight:700; letter-spacing:.05em; color:var(--muted2); transition:all .15s; }
+  .nd-tabs button:hover { color:var(--text); }
+  .nd-tabs button.active { background:linear-gradient(135deg,var(--accent),var(--accent-2,var(--accent))); color:var(--btn-primary-text); box-shadow:0 6px 16px var(--accent-glow); }
+  .nd-search { position:relative; }
+  .nd-search svg { position:absolute; left:13px; top:50%; transform:translateY(-50%); color:var(--muted2); pointer-events:none; }
+  .nd-search input { padding-left:38px !important; height:40px; min-width:230px; border-radius:999px !important; }
+  .nd-search.small input { height:34px; min-width:150px; padding-left:14px !important; }
+  .nd-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(310px,1fr)); gap:16px; }
+  .nd-card { cursor:pointer; }
+  .nd-card.down { border-color:rgba(251,113,133,.5); }
+  .nd-card .pve-card-ico.router { background:var(--accent-dim); color:var(--accent); }
+  .nd-card .pve-card-ico.switch { background:rgba(129,140,248,.14); color:#818cf8; }
+  .nd-down-msg { padding:14px 16px; border-radius:16px; background:rgba(251,113,133,.08); border:1px solid rgba(251,113,133,.25); font-family:var(--mono); font-size:.7rem; color:var(--danger); line-height:1.6; }
+  .nd-vendor { font-family:var(--mono); font-size:.58rem; text-transform:uppercase; letter-spacing:.08em; color:var(--muted2); }
+  .nd-overlay { display:none; position:fixed; inset:0; background:rgba(4,8,14,.62); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); z-index:9999; align-items:center; justify-content:center; padding:16px; }
+  .nd-overlay.show { display:flex; }
+  .nd-box { background:var(--surface); border:1px solid var(--border2); border-radius:26px; width:480px; max-width:100%; max-height:92vh; overflow:auto; padding:28px; box-shadow:0 30px 80px rgba(0,0,0,.5); }
+  .nd-box.wide { width:860px; padding:0; display:flex; flex-direction:column; overflow:hidden; }
+  .nd-box-head { display:flex; align-items:center; gap:12px; padding:20px 24px; border-bottom:1px solid var(--border); }
+  .nd-box-body { padding:20px 24px; overflow:auto; flex:1; min-height:0; }
+  .nd-box-foot { display:flex; gap:10px; justify-content:flex-end; padding:14px 24px; border-top:1px solid var(--border); }
+  .nd-x { width:34px; height:34px; border-radius:12px; border:1px solid var(--border2); background:var(--surface2); color:var(--muted2); display:grid; place-items:center; cursor:pointer; transition:all .15s; }
+  .nd-x:hover { color:var(--text); border-color:var(--accent); }
+  .nd-range { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; font-family:var(--mono); font-size:.68rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted2); }
+  .nd-range select { width:auto; padding:6px 30px 6px 12px; font-size:.7rem; }
+  .nd-charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; margin-bottom:22px; }
+  .nd-chart { background:var(--surface2); border:1px solid var(--border); border-radius:18px; padding:12px 14px 8px; }
+  .nd-chart-head { display:flex; justify-content:space-between; align-items:baseline; font-family:var(--mono); font-size:.62rem; color:var(--muted2); letter-spacing:.08em; text-transform:uppercase; }
+  .nd-chart-head b { font-size:.9rem; color:var(--text); letter-spacing:0; }
+  .nd-chart svg { width:100%; height:64px; display:block; margin-top:6px; }
+  .nd-chart-foot { display:flex; justify-content:space-between; font-family:var(--mono); font-size:.56rem; color:var(--muted2); padding-top:2px; }
+  .nd-if-head { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:10px; font-size:.85rem; }
+  .nd-if-head .nd-search { margin-left:auto; }
+  .nd-check { display:inline-flex; align-items:center; gap:8px; font-family:var(--mono); font-size:.68rem; color:var(--muted); cursor:pointer; }
+  .nd-check input { width:auto; accent-color:var(--accent); }
+  .nd-if-wrap { border:1px solid var(--border); border-radius:18px; overflow:auto; max-height:320px; }
+  .nd-if-wrap table { width:100%; border-collapse:collapse; font-family:var(--mono); font-size:.7rem; }
+  .nd-if-wrap th { position:sticky; top:0; background:var(--surface2); text-align:left; padding:9px 14px; color:var(--muted2); letter-spacing:.08em; text-transform:uppercase; font-size:.58rem; white-space:nowrap; }
+  .nd-if-wrap td { padding:8px 14px; border-top:1px solid var(--border); color:var(--muted); white-space:nowrap; }
+  .nd-if-wrap td.n { color:var(--text); font-weight:600; }
+  .nd-if-wrap td small { color:var(--muted2); margin-left:6px; }
+  .nd-if-wrap td.r { text-align:right; font-variant-numeric:tabular-nums; }
+  .nd-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:8px; background:var(--muted2); }
+  .nd-dot.up { background:var(--ok); box-shadow:0 0 6px var(--ok); } .nd-dot.down { background:var(--danger); } .nd-dot.dis { background:var(--muted2); opacity:.5; }
+  @media (max-width:700px) { .nd-body { padding:6px 12px 20px; } .nd-search input { min-width:0; width:100%; } .nd-search { flex:1; min-width:150px; } .nd-box { padding:22px; border-radius:22px; } .nd-box.wide { padding:0; } }
+</style>
 
 <style id="modern-refresh">
 /* ═══════════════════════════════════════════════════════════
