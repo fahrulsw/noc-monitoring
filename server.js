@@ -466,6 +466,74 @@ function generateScript(vendor, params) {
   return `! Unknown vendor: ${vendor}`;
 }
 
+// ============================================================
+// TEMPLATE SCRIPT AKTIVASI (bisa diedit dari dashboard — khusus admin)
+// Template memakai placeholder {{slot}} {{port}} {{onuId}} {{sn}} {{lokasi}} {{namaPelanggan}} {{idPppoe}}.
+// Bawaan = generateScript() di atas; kalau admin menyimpan versi sendiri, itu yang dipakai.
+// ============================================================
+const TPL_VARS = ['slot', 'port', 'onuId', 'sn', 'lokasi', 'namaPelanggan', 'idPppoe'];
+const TPL_VENDORS = ['OLT1', 'OLT2', 'OLT3', 'OLT4', 'OLT2-CCTV'];
+db.exec(`
+  CREATE TABLE IF NOT EXISTS script_templates (
+    vendor TEXT PRIMARY KEY, body TEXT NOT NULL, updated_by TEXT, updated_at TEXT DEFAULT (datetime('now','localtime'))
+  );
+  CREATE TABLE IF NOT EXISTS script_template_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, vendor TEXT, action TEXT, body TEXT, username TEXT, ts TEXT DEFAULT (datetime('now','localtime'))
+  );
+`);
+const tplDefault = vendor => generateScript(vendor, Object.fromEntries(TPL_VARS.map(v => [v, `{{${v}}}`])));
+const tplGet = vendor => { const r = db.prepare('SELECT body FROM script_templates WHERE vendor = ?').get(vendor); return r ? r.body : null; };
+// Nilai isian tidak boleh membawa baris baru — kalau lolos, bisa menyelipkan perintah CLI tambahan ke OLT.
+const tplClean = v => String(v == null ? '' : v).replace(/[\r\n]+/g, ' ').trim();
+function renderTemplate(body, params) {
+  const clean = Object.fromEntries(TPL_VARS.map(k => [k, tplClean(params[k])]));
+  return String(body).replace(/\{\{\s*(\w+)\s*\}\}/g, (m, k) => (k in clean ? clean[k] : m));
+}
+function generateScriptFinal(vendor, params) {
+  const custom = tplGet(vendor);
+  if (custom) return renderTemplate(custom, params);
+  return generateScript(vendor, Object.fromEntries(TPL_VARS.map(k => [k, tplClean(params[k])])));
+}
+const tplAdmin = (req, res, next) => (req.user && req.user.role === 'admin') ? next() : res.status(403).json({ success: false, message: 'Akses ditolak — hanya admin' });
+
+app.get('/api/script-templates', requireAuth, tplAdmin, (req, res) => {
+  const list = TPL_VENDORS.map(v => {
+    const row = db.prepare('SELECT body, updated_by, updated_at FROM script_templates WHERE vendor = ?').get(v);
+    return {
+      vendor: v, custom: !!row, body: row ? row.body : tplDefault(v), defaultBody: tplDefault(v),
+      updated_by: row ? row.updated_by : null, updated_at: row ? row.updated_at : null,
+      olts: Object.entries(OLT_CONFIG).filter(([, c]) => c.vendor === v).map(([n]) => n),
+    };
+  });
+  res.json({ success: true, vars: TPL_VARS, templates: list });
+});
+
+app.put('/api/script-templates/:vendor', requireAuth, tplAdmin, (req, res) => {
+  const vendor = req.params.vendor, body = String((req.body && req.body.body) || '').replace(/\r\n/g, '\n');
+  if (!TPL_VENDORS.includes(vendor)) return res.status(404).json({ success: false, message: 'Profil tidak dikenal' });
+  if (!body.trim()) return res.status(400).json({ success: false, message: 'Isi script tidak boleh kosong' });
+  if (body.length > 20000) return res.status(400).json({ success: false, message: 'Script terlalu panjang (maks 20.000 karakter)' });
+  const unknown = [...body.matchAll(/\{\{\s*(\w+)\s*\}\}/g)].map(m => m[1]).filter(k => !TPL_VARS.includes(k));
+  if (unknown.length) return res.status(400).json({ success: false, message: 'Variabel tidak dikenal: ' + [...new Set(unknown)].map(k => `{{${k}}}`).join(', ') });
+  const stray = body.match(/\{\{|\}\}/g) ? body.replace(/\{\{\s*\w+\s*\}\}/g, '').match(/\{\{|\}\}/) : null;
+  if (stray) return res.status(400).json({ success: false, message: 'Ada tanda {{ atau }} yang tidak lengkap' });
+  db.prepare(`INSERT INTO script_templates (vendor, body, updated_by, updated_at) VALUES (?,?,?,datetime('now','localtime'))
+              ON CONFLICT(vendor) DO UPDATE SET body=excluded.body, updated_by=excluded.updated_by, updated_at=excluded.updated_at`).run(vendor, body, req.user.username);
+  db.prepare('INSERT INTO script_template_log (vendor, action, body, username) VALUES (?,?,?,?)').run(vendor, 'save', body, req.user.username);
+  db.prepare('DELETE FROM script_template_log WHERE id NOT IN (SELECT id FROM script_template_log ORDER BY id DESC LIMIT 200)').run();
+  console.log(`[TEMPLATE] ${req.user.username} menyimpan template ${vendor}`);
+  res.json({ success: true });
+});
+
+app.delete('/api/script-templates/:vendor', requireAuth, tplAdmin, (req, res) => {
+  const vendor = req.params.vendor;
+  if (!TPL_VENDORS.includes(vendor)) return res.status(404).json({ success: false, message: 'Profil tidak dikenal' });
+  db.prepare('DELETE FROM script_templates WHERE vendor = ?').run(vendor);
+  db.prepare('INSERT INTO script_template_log (vendor, action, body, username) VALUES (?,?,?,?)').run(vendor, 'reset', null, req.user.username);
+  console.log(`[TEMPLATE] ${req.user.username} mereset template ${vendor} ke bawaan`);
+  res.json({ success: true });
+});
+
 // // --- API: GET OLTs ---
 // app.get('/api/olts', requireAuth, (req, res) => {
 //   const list = Object.entries(OLT_CONFIG).map(([name, cfg]) => ({
@@ -613,7 +681,7 @@ app.post('/api/activate', requireAuth, async (req, res) => {
     return res.status(404).json({ success: false, message: `OLT "${oltName}" tidak ditemukan` });
   }
 
-  const script = generateScript(oltCfg.vendor, { slot, port, onuId, sn, lokasi, namaPelanggan, idPppoe });
+  const script = generateScriptFinal(oltCfg.vendor, { slot, port, onuId, sn, lokasi, namaPelanggan, idPppoe });
   const log = [];
 
   if (!pushToOlt) {
