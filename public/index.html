@@ -34,10 +34,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Roboto+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-<link rel="icon" type="image/x-icon" href="favicon.ico">
-<link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
-<link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
-<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/x-icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#070f1b">
 <style>
   :root {
     --bg: #0a0d13;
@@ -3237,7 +3239,11 @@ document.addEventListener('DOMContentLoaded', function() {
         <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
       </button>
     </div>
-    <div class="sidebar-divider"></div>
+    <button class="app-ver" id="app-ver-btn" onclick="openChangelog()" title="Lihat changelog">
+      <span class="app-ver-dot" id="app-ver-dot"></span>
+      <span class="app-ver-num" id="app-ver-num">v—</span>
+      <span class="app-ver-lbl">Changelog</span>
+    </button>
     <div class="sidebar-collapse-btn" onclick="toggleSidebar()" title="Toggle sidebar">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
     </div>
@@ -4937,6 +4943,63 @@ document.addEventListener('DOMContentLoaded', function() {
     if (tplIsDirty) { const ok = await showConfirm({ title: 'Tutup Tanpa Menyimpan?', body: 'Perubahan pada template ' + tplCur + ' belum disimpan.', confirmLabel: 'Ya, Tutup' }); if (!ok) return; }
     tplIsDirty = false; document.getElementById('tpl-modal').classList.remove('show');
   }
+
+  // ─── VERSI APP & CHANGELOG ───
+  // Tambah rilis baru di PALING ATAS array, lalu ubah APP_VERSION. Tipe: new | imp | fix
+  const APP_VERSION = '1.6.0';
+  const APP_CHANGELOG = [
+    { v: '1.6.0', date: '27 Okt 2026', items: [
+      ['new', 'Versi aplikasi dan changelog di sidebar.'],
+      ['fix', 'Server tidak lagi mati saat Mikrotik timeout (error RouterOS tertangani).'],
+      ['imp', 'Pesan error 404 pada halaman Router & Switch kini menyebut endpoint yang bermasalah.'],
+    ] },
+    { v: '1.5.0', date: '26 Okt 2026', items: [
+      ['imp', 'Poller OLT lebih cepat: tiap OLT punya jadwal sendiri, walk SNMP paralel untuk OLT non-C300, GETBULK lebih besar.'],
+      ['imp', 'OLT C320 di-poll tiap 30 detik, C300 tetap 60 detik (bisa diatur lewat environment variable).'],
+      ['new', 'Popup konfirmasi bergaya modern (ikon, warna sesuai aksi, tombol pill) termasuk popup Hapus ONU.'],
+    ] },
+    { v: '1.4.0', date: '25 Okt 2026', items: [
+      ['new', 'Reboot ONU langsung dari Monitor ONU (admin & operator), dengan konfirmasi dan cooldown 60 detik.'],
+      ['new', 'Jawaban otomatis "yes" untuk konfirmasi [yes/no] di OLT ZTE.'],
+      ['new', 'Riwayat aksi ONU tercatat di tabel onu_action_log.'],
+    ] },
+    { v: '1.3.0', date: '24 Okt 2026', items: [
+      ['new', 'Monitoring Router & Switch via SNMP: CPU, RAM, suhu, uptime, up/down + latency, status & trafik interface.'],
+      ['new', 'Admin dapat mengedit template script aktivasi ONU dari halaman Aktivasi ONU.'],
+      ['imp', 'Operator boleh menambah dan menghapus perangkat Router & Switch.'],
+    ] },
+    { v: '1.2.0', date: '23 Okt 2026', items: [
+      ['new', 'Terminal CLI OLT di browser (admin & operator) dengan audit log.'],
+      ['imp', 'Dropdown Manajemen ONU tetap terbuka setelah item diklik.'],
+    ] },
+    { v: '1.1.0', date: '21 Okt 2026', items: [
+      ['new', 'Halaman login baru dengan tampilan split-layout modern.'],
+      ['imp', 'Tampilan seluruh aplikasi diseragamkan dengan gaya halaman login (sidebar, dropdown, kartu, modal membulat).'],
+    ] },
+  ];
+  const _CL_TAG = { new: 'Baru', imp: 'Ubah', fix: 'Perbaikan' };
+  const _CL_KEY = 'nocs-last-seen-version';
+  function _clSeen(v) { try { if (v === undefined) return localStorage.getItem(_CL_KEY); localStorage.setItem(_CL_KEY, v); } catch (e) {} return null; }
+  function initAppVersion() {
+    document.getElementById('app-ver-num').textContent = 'v' + APP_VERSION;
+    const seen = _clSeen();
+    // pengguna pertama kali (belum ada catatan) tidak diberi penanda "baru"
+    if (seen === null) _clSeen(APP_VERSION);
+    else if (seen !== APP_VERSION) document.getElementById('app-ver-btn').classList.add('has-new');
+  }
+  function openChangelog() {
+    document.getElementById('cl-cur').textContent = 'v' + APP_VERSION;
+    document.getElementById('cl-body').innerHTML = APP_CHANGELOG.map((r, i) =>
+      '<div class="cl-rel' + (i === 0 ? ' cur' : '') + '"><div class="cl-rel-head"><span class="cl-ver">v' + escHtml(r.v) + '</span>' +
+      (i === 0 ? '<span class="cl-badge">Terbaru</span>' : '') + '<span class="cl-date">' + escHtml(r.date) + '</span></div><ul class="cl-list">' +
+      r.items.map(it => '<li><span class="cl-tag ' + it[0] + '">' + _CL_TAG[it[0]] + '</span><span>' + escHtml(it[1]) + '</span></li>').join('') + '</ul></div>').join('');
+    document.getElementById('changelog-modal').classList.add('show');
+    document.getElementById('app-ver-btn').classList.remove('has-new');
+    _clSeen(APP_VERSION);
+  }
+  function closeChangelog() { document.getElementById('changelog-modal').classList.remove('show'); }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeChangelog(); });
+  initAppVersion();
 
   function switchPage(name) {
     document.querySelectorAll('.sidebar-item[data-page]').forEach(el => el.classList.toggle('active', el.dataset.page === name));
@@ -10210,6 +10273,20 @@ function renderDashEmpty(msg) {
     </div>
   </div>
 </div>
+<!-- Modal Changelog -->
+<div id="changelog-modal" onclick="if(event.target===this)closeChangelog()">
+  <div class="cl-box" role="dialog" aria-modal="true" aria-labelledby="cl-title">
+    <div class="cl-head">
+      <div class="cl-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L4.2 7.7l5.4-.8z"/></svg></div>
+      <div style="flex:1;min-width:0">
+        <div class="cl-title" id="cl-title">Changelog</div>
+        <div class="cl-sub">NOC System · versi saat ini <b id="cl-cur">—</b></div>
+      </div>
+      <button class="cl-x" onclick="closeChangelog()" aria-label="Tutup"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="cl-body" id="cl-body"></div>
+  </div>
+</div>
 <!-- Modal Konfirmasi Hapus ONU (Monitor ONU) -->
 <div id="onu-delete-modal" style="display:none;">
   <div class="modal-box tone-danger" role="dialog" aria-modal="true" aria-labelledby="onu-delete-title">
@@ -11114,6 +11191,41 @@ input:focus, select:focus, textarea:focus {
 #onu-delete-modal .modal-icon { animation: cfPop .45s cubic-bezier(.2,1.4,.4,1) both; }
 @keyframes cfIn { from { transform: translateY(14px) scale(.95); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (max-width: 520px) { .modal-box { padding: 28px 22px 22px; } .modal-actions { flex-direction: column-reverse; } }
+
+/* Versi app & changelog */
+.app-ver { display:flex; align-items:center; gap:8px; width:calc(100% - 16px); margin:6px 8px 8px; padding:8px 12px; border-radius:14px; border:1px solid var(--border); background:var(--surface2); color:var(--muted2); font-family:var(--mono); font-size:.66rem; cursor:pointer; transition:all .15s; text-align:left; }
+.app-ver:hover { border-color:var(--accent); color:var(--text); }
+.app-ver-num { font-weight:700; color:var(--accent); }
+.app-ver-lbl { margin-left:auto; letter-spacing:.06em; text-transform:uppercase; font-size:.58rem; }
+.app-ver-dot { width:7px; height:7px; border-radius:50%; background:var(--muted2); opacity:.45; flex-shrink:0; }
+.app-ver.has-new .app-ver-dot { background:var(--accent); opacity:1; box-shadow:0 0 8px var(--accent); animation:cfPulse 1.8s infinite; }
+@keyframes cfPulse { 50% { opacity:.35; } }
+.sidebar.collapsed .app-ver { width:auto; justify-content:center; padding:8px 0; margin:6px 6px 8px; }
+.sidebar.collapsed .app-ver-lbl, .sidebar.collapsed .app-ver-dot { display:none; }
+.sidebar.collapsed .app-ver-num { font-size:.58rem; }
+#changelog-modal { display:none; position:fixed; inset:0; z-index:9999; align-items:center; justify-content:center; padding:16px; background:rgba(4,8,14,.62); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); }
+#changelog-modal.show { display:flex; }
+.cl-box { width:560px; max-width:100%; max-height:86vh; display:flex; flex-direction:column; background:var(--glass, var(--surface)); border:1px solid var(--border2); border-radius:26px; box-shadow:0 30px 80px rgba(0,0,0,.5); overflow:hidden; animation:cfIn .28s cubic-bezier(.2,1.2,.4,1) both; }
+.cl-head { display:flex; align-items:center; gap:14px; padding:22px 24px 18px; border-bottom:1px solid var(--border); }
+.cl-ico { width:44px; height:44px; border-radius:14px; display:grid; place-items:center; color:var(--accent); background:var(--accent-dim); border:1px solid var(--accent-glow); flex-shrink:0; }
+.cl-ico svg { width:22px; height:22px; }
+.cl-title { font-family:var(--mono); font-size:1rem; font-weight:700; color:var(--text); }
+.cl-sub { font-size:.74rem; color:var(--muted2); margin-top:2px; } .cl-sub b { color:var(--accent); font-family:var(--mono); }
+.cl-x { width:34px; height:34px; border-radius:12px; border:1px solid var(--border2); background:var(--surface2); color:var(--muted2); display:grid; place-items:center; cursor:pointer; flex-shrink:0; transition:all .15s; }
+.cl-x:hover { color:var(--text); border-color:var(--accent); } .cl-x svg { width:15px; height:15px; }
+.cl-body { overflow-y:auto; padding:8px 24px 24px; scrollbar-width:thin; scrollbar-color:var(--border2) transparent; }
+.cl-rel { position:relative; padding:18px 0 4px 22px; border-left:2px solid var(--border); margin-left:6px; }
+.cl-rel::before { content:''; position:absolute; left:-7px; top:22px; width:12px; height:12px; border-radius:50%; background:var(--surface); border:2px solid var(--muted2); }
+.cl-rel.cur::before { border-color:var(--accent); background:var(--accent); box-shadow:0 0 10px var(--accent-glow); }
+.cl-rel-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px; }
+.cl-ver { font-family:var(--mono); font-weight:700; font-size:.9rem; color:var(--text); }
+.cl-badge { font-family:var(--mono); font-size:.55rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; padding:3px 9px; border-radius:999px; background:var(--accent-dim); color:var(--accent); border:1px solid var(--accent-glow); }
+.cl-date { font-family:var(--mono); font-size:.64rem; color:var(--muted2); margin-left:auto; }
+.cl-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:7px; }
+.cl-list li { display:flex; gap:10px; align-items:flex-start; font-size:.8rem; line-height:1.5; color:var(--muted); }
+.cl-tag { flex-shrink:0; min-width:68px; text-align:center; font-family:var(--mono); font-size:.54rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; padding:3px 0; border-radius:8px; margin-top:2px; }
+.cl-tag.new { background:rgba(52,211,153,.14); color:var(--ok); } .cl-tag.imp { background:var(--accent-dim); color:var(--accent); } .cl-tag.fix { background:rgba(251,191,36,.14); color:#fbbf24; }
+@media (max-width:520px) { .cl-head { padding:18px 16px 14px; } .cl-body { padding:6px 16px 20px; } .cl-date { margin-left:0; width:100%; } }
 
 /* Tabel & scroll */
 .table-scroll-wrap, #mon-table-wrap { border-radius: 16px; }
