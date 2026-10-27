@@ -285,7 +285,7 @@ const OLT_CONFIG = {
     vendor: 'OLT2',
   },
   'OLT-C320-MINTRENG': {
-    host: '10.136.2.1',
+    host: '10.136.20.1',
     username: 'zte',
     password: 'zte',
     port: 233,
@@ -3908,6 +3908,86 @@ const AI_TOOLS = [
       required: [],
     },
   },
+  {
+    name: 'get_network_devices',
+    description: 'Daftar perangkat Router & Switch yang dipantau (menu "Router & Switch"): status up/down, latency, CPU %, RAM %, suhu, uptime, jumlah interface up/total, error terakhir. Bisa difilter jenis/status/nama.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: ['router', 'switch'], description: 'Opsional' },
+        status: { type: 'string', enum: ['up', 'down'], description: 'Opsional' },
+        query: { type: 'string', description: 'Opsional: cari nama / IP / vendor' },
+        limit: { type: 'integer', description: 'Maks baris (default 30, maks 60)' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'get_device_interfaces',
+    description: 'Interface satu perangkat Router/Switch: status admin/oper, kecepatan, trafik masuk/keluar (bps). Bisa hanya yang down atau dicari berdasarkan nama/alias.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        device: { type: 'string', description: 'Nama perangkat (persis atau sebagian)' },
+        only_down: { type: 'boolean', description: 'Hanya interface yang admin-up tapi oper-down' },
+        query: { type: 'string', description: 'Opsional: cari nama/alias interface' },
+        sort_by_traffic: { type: 'boolean', description: 'Urutkan dari trafik terbesar' },
+        limit: { type: 'integer', description: 'Maks baris (default 20, maks 50)' },
+      },
+      required: ['device'],
+    },
+  },
+  {
+    name: 'get_device_trend',
+    description: 'Riwayat satu perangkat Router/Switch dalam N jam terakhir: persentase up, jumlah kejadian down, rata-rata/maks CPU, RAM, suhu, latency.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        device: { type: 'string', description: 'Nama perangkat' },
+        hours: { type: 'integer', description: 'Rentang jam (default 24, maks 168)' },
+      },
+      required: ['device'],
+    },
+  },
+  {
+    name: 'get_activation_history',
+    description: 'Riwayat aktivasi ONU (menu Aktivasi ONU): cari berdasarkan nama pelanggan, SN, lokasi, ID PPPoE, atau OLT. Tanpa query = yang terbaru.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Opsional: nama/SN/lokasi/ID PPPoE' },
+        olt_name: { type: 'string', description: 'Opsional' },
+        limit: { type: 'integer', description: 'Maks baris (default 15, maks 30)' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'get_pppoe_active',
+    description: 'Sesi PPPoE aktif dari router Mikrotik (data langsung dari router): jumlah per router, dan daftar sesi bila dicari. Tanpa router = semua router terdaftar.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        router: { type: 'string', description: 'Opsional: nama router Mikrotik' },
+        query: { type: 'string', description: 'Opsional: cari username PPPoE / IP' },
+        limit: { type: 'integer', description: 'Maks sesi ditampilkan (default 15, maks 40)' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'search_pppoe_secret',
+    description: 'Cari akun PPPoE (secret) di Mikrotik: profile, status disabled, comment. TIDAK menampilkan password.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Username / sebagian username / comment' },
+        router: { type: 'string', description: 'Opsional: nama router Mikrotik' },
+        limit: { type: 'integer', description: 'Maks baris (default 15, maks 30)' },
+      },
+      required: ['query'],
+    },
+  },
 ];
 
 const _isCctv = (n) => String(n || '').toUpperCase().includes('CCTV'); // duplikat IP OLT, sama seperti dashboard
@@ -4005,6 +4085,95 @@ async function aiRunTool(name, input) {
       else list.sort((a, b) => a.vmid - b.vmid);
       const limit = _clampLimit(input.limit, 20, 40);
       return { total_matching: list.length, shown: Math.min(limit, list.length), items: list.slice(0, limit), unreachable_servers: errors };
+    }
+    case 'get_network_devices': {
+      let rows;
+      try { rows = db.prepare(`SELECT d.*, (SELECT COUNT(*) FROM net_device_ifaces i WHERE i.device_id=d.id) AS if_total,
+                 (SELECT COUNT(*) FROM net_device_ifaces i WHERE i.device_id=d.id AND i.oper=1) AS if_up FROM net_devices d ORDER BY d.kind, d.name`).all(); }
+      catch (e) { return { error: 'Modul Router & Switch belum aktif di server (tabel net_devices tidak ada).' }; }
+      if (input.kind) rows = rows.filter(r => r.kind === input.kind);
+      if (input.status) rows = rows.filter(r => input.status === 'up' ? r.up === 1 : r.up === 0);
+      if (input.query) { const q = String(input.query).toLowerCase(); rows = rows.filter(r => [r.name, r.host, r.vendor, r.detected_vendor, r.sys_name].some(v => String(v || '').toLowerCase().includes(q))); }
+      const total = rows.length, down = rows.filter(r => r.up === 0).length;
+      const limit = _clampLimit(input.limit, 30, 60);
+      return { total_matching: total, down_count: down, shown: Math.min(limit, total), items: rows.slice(0, limit).map(r => ({
+        name: r.name, host: r.host, kind: r.kind, vendor: r.vendor === 'auto' ? r.detected_vendor : r.vendor,
+        status: r.up == null ? 'belum dipoll' : (r.up ? 'UP' : 'DOWN'), latency_ms: r.latency, cpu_pct: r.cpu, mem_pct: r.mem_pct, temp_c: r.temp,
+        uptime_hours: r.uptime_s != null ? Math.round(r.uptime_s / 360) / 10 : null,
+        interfaces_up: r.if_up, interfaces_total: r.if_total, last_error: r.last_error || null,
+        last_poll: r.last_poll ? new Date(r.last_poll).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) : null,
+      })) };
+    }
+    case 'get_device_interfaces': {
+      let dev;
+      try { const q = String(input.device || '').trim(); dev = db.prepare('SELECT id, name FROM net_devices WHERE name = ? COLLATE NOCASE').get(q) || db.prepare('SELECT id, name FROM net_devices WHERE name LIKE ? ORDER BY name').get(`%${q}%`); }
+      catch (e) { return { error: 'Modul Router & Switch belum aktif di server.' }; }
+      if (!dev) return { error: `Perangkat "${input.device}" tidak ditemukan. Gunakan get_network_devices untuk melihat daftar.` };
+      let ifs = db.prepare('SELECT if_index, name, alias, admin, oper, speed_mbps, in_bps, out_bps FROM net_device_ifaces WHERE device_id=?').all(dev.id);
+      if (input.only_down) ifs = ifs.filter(i => i.admin === 1 && i.oper !== 1);
+      if (input.query) { const q = String(input.query).toLowerCase(); ifs = ifs.filter(i => String(i.name || '').toLowerCase().includes(q) || String(i.alias || '').toLowerCase().includes(q)); }
+      if (input.sort_by_traffic) ifs.sort((a, b) => ((b.in_bps || 0) + (b.out_bps || 0)) - ((a.in_bps || 0) + (a.out_bps || 0)));
+      else ifs.sort((a, b) => a.if_index - b.if_index);
+      const limit = _clampLimit(input.limit, 20, 50);
+      const mbps = v => v == null ? null : Math.round(v / 1e4) / 100;
+      return { device: dev.name, total_matching: ifs.length, shown: Math.min(limit, ifs.length), items: ifs.slice(0, limit).map(i => ({
+        name: i.name, alias: i.alias || '', admin: i.admin === 1 ? 'up' : 'down', oper: i.oper === 1 ? 'up' : 'down', speed_mbps: i.speed_mbps, in_mbps: mbps(i.in_bps), out_mbps: mbps(i.out_bps) })) };
+    }
+    case 'get_device_trend': {
+      let dev;
+      try { const q = String(input.device || '').trim(); dev = db.prepare('SELECT id, name FROM net_devices WHERE name = ? COLLATE NOCASE').get(q) || db.prepare('SELECT id, name FROM net_devices WHERE name LIKE ? ORDER BY name').get(`%${q}%`); }
+      catch (e) { return { error: 'Modul Router & Switch belum aktif di server.' }; }
+      if (!dev) return { error: `Perangkat "${input.device}" tidak ditemukan.` };
+      const hours = Math.min(Math.max(parseInt(input.hours, 10) || 24, 1), 168);
+      const rows = db.prepare('SELECT ts, up, cpu, mem_pct, temp, latency FROM net_device_samples WHERE device_id=? AND ts>=? ORDER BY ts').all(dev.id, Date.now() - hours * 3600000);
+      if (!rows.length) return { device: dev.name, hours, samples: 0, note: 'Belum ada data riwayat pada rentang ini.' };
+      const st = k => { const v = rows.map(r => r[k]).filter(x => x != null); return v.length ? { avg: Math.round(v.reduce((a, b) => a + b, 0) / v.length * 10) / 10, max: Math.round(Math.max(...v) * 10) / 10 } : null; };
+      let downEvents = 0; for (let i = 0; i < rows.length; i++) if (rows[i].up === 0 && (i === 0 || rows[i - 1].up !== 0)) downEvents++;
+      return { device: dev.name, hours, samples: rows.length, uptime_pct: Math.round(rows.filter(r => r.up === 1).length / rows.length * 1000) / 10, down_events: downEvents,
+        cpu_pct: st('cpu'), mem_pct: st('mem_pct'), temp_c: st('temp'), latency_ms: st('latency') };
+    }
+    case 'get_activation_history': {
+      const conds = [], params = [];
+      if (input.query) { const l = `%${String(input.query)}%`; conds.push('(namaPelanggan LIKE ? OR sn LIKE ? OR lokasi LIKE ? OR idPppoe LIKE ?)'); params.push(l, l, l, l); }
+      if (input.olt_name) { conds.push('oltName = ?'); params.push(input.olt_name); }
+      const all = db.prepare(`SELECT ts, oltName, slot, port, onuId, sn, lokasi, namaPelanggan, idPppoe, success, pushed, rxPower FROM history ${conds.length ? 'WHERE ' + conds.join(' AND ') : ''} ORDER BY created_at DESC, ts DESC`).all(...params);
+      const limit = _clampLimit(input.limit, 15, 30);
+      return { total_matching: all.length, shown: Math.min(limit, all.length), items: all.slice(0, limit).map(r => ({
+        waktu: r.ts, olt: r.oltName, interface: `1/${r.slot}/${r.port}:${r.onuId}`, sn: r.sn, lokasi: r.lokasi, pelanggan: r.namaPelanggan, id_pppoe: r.idPppoe,
+        berhasil: !!r.success, dikirim_ke_olt: !!r.pushed, rx_dbm: r.rxPower })) };
+    }
+    case 'get_pppoe_active': {
+      const routers = db.prepare('SELECT * FROM mikrotik_config').all().filter(r => !input.router || r.name === input.router);
+      if (!routers.length) return { error: input.router ? `Router "${input.router}" tidak ditemukan.` : 'Belum ada router Mikrotik terdaftar.' };
+      const q = String(input.query || '').toLowerCase();
+      const limit = _clampLimit(input.limit, 15, 40);
+      const results = await Promise.allSettled(routers.map(cfg => mikrotikQuery(cfg, '/ppp/active/print')));
+      const per = [], matched = [], errors = [];
+      results.forEach((r, i) => {
+        if (r.status === 'rejected') { errors.push({ router: routers[i].name, message: r.reason && r.reason.message }); return; }
+        const list = (r.value || []).filter(x => !x.service || x.service === 'pppoe');
+        per.push({ router: routers[i].name, active_sessions: list.length });
+        if (q) list.filter(x => String(x.name || '').toLowerCase().includes(q) || String(x.address || '').includes(q))
+          .forEach(x => matched.push({ router: routers[i].name, name: x.name, address: x.address, uptime: x.uptime, caller_id: x['caller-id'] }));
+      });
+      const out = { per_router: per, total_active: per.reduce((a, b) => a + b.active_sessions, 0), unreachable_routers: errors };
+      if (q) { out.total_matching = matched.length; out.shown = Math.min(limit, matched.length); out.items = matched.slice(0, limit); }
+      return out;
+    }
+    case 'search_pppoe_secret': {
+      const q = String(input.query || '').trim().toLowerCase();
+      if (!q) return { error: 'query kosong' };
+      const routers = db.prepare('SELECT * FROM mikrotik_config').all().filter(r => !input.router || r.name === input.router);
+      if (!routers.length) return { error: 'Router Mikrotik tidak ditemukan.' };
+      const limit = _clampLimit(input.limit, 15, 30);
+      const results = await Promise.allSettled(routers.map(cfg => mikrotikQuery(cfg, '/ppp/secret/print')));
+      const matched = [], errors = [];
+      results.forEach((r, i) => {
+        if (r.status === 'rejected') { errors.push({ router: routers[i].name, message: r.reason && r.reason.message }); return; }
+        (r.value || []).filter(x => (!x.service || x.service === 'pppoe') && (String(x.name || '').toLowerCase().includes(q) || String(x.comment || '').toLowerCase().includes(q)))
+          .forEach(x => matched.push({ router: routers[i].name, name: x.name, profile: x.profile, disabled: x.disabled === 'true', comment: x.comment || '', last_logged_out: x['last-logged-out'] || null }));   // password sengaja tidak disertakan
+      });
+      return { total_matching: matched.length, shown: Math.min(limit, matched.length), items: matched.slice(0, limit), unreachable_routers: errors };
     }
     default:
       return { error: `Tool tidak dikenal: ${name}` };
@@ -4122,6 +4291,8 @@ function aiSystemPrompt() {
     '- Jika hasil tool terpotong (total_matching > shown), katakan jumlah total dan bahwa yang tampil hanya sebagian.',
     '- Kamu HANYA bisa membaca data. Kamu tidak bisa mengubah konfigurasi, menjalankan perintah di OLT/Mikrotik/Proxmox, atau mengaktifkan ONU. Jika diminta, jelaskan langkahnya saja dan arahkan ke menu dashboard yang sesuai.',
     '- Referensi redaman ONU: RX -8 s/d -25 dBm normal, -25 s/d -28 mulai lemah, di bawah -28 kritis. Sebutkan ini sebagai panduan umum.',
+    '- Data yang bisa kamu baca lewat tool: ONU/OLT (cache SNMP), kesehatan OLT, status polling, Proxmox, perangkat Router & Switch (status, CPU/RAM/suhu, interface, riwayat), riwayat aktivasi ONU, serta sesi/akun PPPoE di Mikrotik (tanpa password).',
+    '- Menu dashboard yang ADA: Dashboard, Manajemen ONU (Aktivasi ONU, Monitor ONU, dll.), Mikrotik PPPoE, FFmpeg, Proxmox, Router & Switch, AI Assistant, Scan RBL, Ping Monitor, Tools. JANGAN menyebut menu/halaman lain (mis. "Inventory") atau mengarang langkah UI. Jika datanya tidak bisa diambil dengan tool, katakan terus terang bahwa kamu tidak punya akses ke data itu.',
     '- Jangan memakai tabel markdown. Gunakan daftar bullet atau penomoran. Boleh pakai **tebal** dan `kode` seperlunya.',
   ].join('\n');
 }
