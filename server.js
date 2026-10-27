@@ -285,7 +285,7 @@ const OLT_CONFIG = {
     vendor: 'OLT2',
   },
   'OLT-C320-MINTRENG': {
-    host: '10.136.20.1',
+    host: '10.136.2.1',
     username: 'zte',
     password: 'zte',
     port: 233,
@@ -654,12 +654,30 @@ async function telnetExec(oltCfg, commands, log) {
 
   log.push(`[OK]   Connected to ${oltCfg.host} via Telnet`);
 
-  for (const cmd of commands) {
+  const basePrompt = telnet.opts.shellPrompt;
+  for (const entry of commands) {
+    // entry: string, atau { cmd, confirm: RegExp, answer } untuk perintah yang meminta konfirmasi [yes/no]
+    const isObj = entry && typeof entry === 'object';
+    const cmd = (isObj ? entry.cmd : entry);
     if (!cmd.trim() || cmd.trim().startsWith('!')) continue;
     try {
-      const result = await telnet.exec(cmd.trim());
-      log.push(`[CMD]  ${cmd.trim()}`);
-      if (result && result.trim()) log.push(`[OUT]  ${result.trim()}`);
+      let result;
+      if (isObj && entry.confirm) {
+        // tunggu prompt shell ATAU pertanyaan konfirmasi, mana yang datang duluan
+        telnet.opts.shellPrompt = new RegExp('(?:' + entry.confirm.source + ')|(?:' + basePrompt.source + ')', 'i');
+        try { result = await telnet.exec(cmd.trim()); } finally { telnet.opts.shellPrompt = basePrompt; }
+        log.push(`[CMD]  ${cmd.trim()}`);
+        if (result && result.trim()) log.push(`[OUT]  ${result.trim()}`);
+        if (result && entry.confirm.test(result)) {
+          const ans = await telnet.exec(entry.answer || 'yes');
+          log.push(`[CMD]  ${entry.answer || 'yes'}  (konfirmasi)`);
+          if (ans && ans.trim()) log.push(`[OUT]  ${ans.trim()}`);
+        }
+      } else {
+        result = await telnet.exec(cmd.trim());
+        log.push(`[CMD]  ${cmd.trim()}`);
+        if (result && result.trim()) log.push(`[OUT]  ${result.trim()}`);
+      }
     } catch (e) {
       log.push(`[WARN] ${cmd.trim()} -> ${e.message}`);
     }
@@ -977,6 +995,8 @@ const SNMP_PORT = 161;
 const SNMP_VERSION = snmp.Version2c;
 const SNMP_TIMEOUT = 10000; // 10 dtk (sebelumnya 5000): walk tabel ZTE C300 bisa lambat
 const SNMP_RETRIES = 1;
+const SNMP_MAXREP_FAST = Math.max(10, parseInt(process.env.SNMP_MAXREP_FAST, 10) || 30); // GETBULK untuk OLT non-C300
+const SNMP_PARALLEL = process.env.SNMP_PARALLEL !== '0';                                  // walk paralel untuk OLT non-C300
 
 // OID ZTE GPON C320/C300 (verified via snmpwalk)
 const OID = {
@@ -1026,11 +1046,11 @@ function snmpSession(host) {
   });
 }
 
-function snmpGetSubtree(host, rootOid) {
+function snmpGetSubtree(host, rootOid, maxRep = 10) {
   return new Promise((resolve, reject) => {
     const session = snmpSession(host);
     const results = [];
-    session.subtree(rootOid, 10, (varbinds) => {
+    session.subtree(rootOid, maxRep, (varbinds) => {
       for (const vb of varbinds) {
         if (snmp.isVarbindError(vb)) continue;
         results.push({ oid: vb.oid, value: vb.value });
@@ -1050,7 +1070,8 @@ function snmpGetSubtree(host, rootOid) {
 async function timedSubtree(oltName, host, rootOid, label) {
   const t0 = Date.now();
   try {
-    const rows = await snmpGetSubtree(host, rootOid);
+    // OLT non-C300 (mis. C320) kuat dengan GETBULK besar -> jauh lebih sedikit round-trip. C300 tetap 10.
+    const rows = await snmpGetSubtree(host, rootOid, /C300/.test(oltName) ? 10 : SNMP_MAXREP_FAST);
     const dur = Date.now() - t0;
     if (dur > 1500) {
       console.log(`[POLLER][DIAG] ${oltName} · ${label}: ${rows.length} baris dalam ${dur}ms`);
@@ -1163,7 +1184,7 @@ function snmpGetFast(host, oids) {
 // waktu), lalu lanjut dari posisi terakhir di panggilan berikutnya (rotasi), dan nilai
 // yang belum terambil memakai cache. Semua ONU online tercover dalam beberapa siklus.
 // suffixes: array "<portIndex>.<onuId>".
-const ONU_GET_BATCH = 6;
+const ONU_GET_BATCH = Math.min(20, Math.max(1, parseInt(process.env.ONU_GET_BATCH, 10) || 6)); // naikkan (mis. 12) kalau log "batch gagal" = 0
 const ONU_GET_BUDGET_MS = 25000;
 const onuGetCursor = new Map(); // "olt|label" -> indeks mulai berikutnya
 async function getByOnu(oltName, host, rootOid, label, suffixes, budgetMs = ONU_GET_BUDGET_MS) {
@@ -1762,6 +1783,66 @@ app.patch('/api/snmp/onu-replace', requireAuth, async (req, res) => {
 // di interface gpon-onu_1/slot/port:onuId (name, tcont, gemport, service-port, pon-onu-mng,
 // wan-ip pppoe, dst), jadi tidak perlu unconfigure tiap bagian satu-satu. Dipakai kalau
 // pelanggan berhenti berlangganan / ONU dicabut permanen dari ODP.
+// --- API: REBOOT ONU (dari Monitor ONU) ---
+// Perintah ZTE: conf t -> pon-onu-mng gpon-onu_1/<slot>/<port>:<id> -> reboot
+db.exec(`CREATE TABLE IF NOT EXISTS onu_action_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT DEFAULT (datetime('now','localtime')),
+  username TEXT, olt TEXT, iface TEXT, action TEXT, result TEXT, detail TEXT
+)`);
+const onuRebootLast = new Map();          // `${olt}:${iface}` -> timestamp (cegah tekan berulang)
+app.post('/api/snmp/onu-reboot', requireAuth, async (req, res) => {
+  if (!req.user || !['admin', 'operator'].includes(req.user.role)) {
+    return res.status(403).json({ success: false, message: 'Akses ditolak — hanya admin / operator' });
+  }
+  const { oltName, slot, port, onuId } = req.body || {};
+  if (!oltName || slot == null || port == null || onuId == null) {
+    return res.status(400).json({ success: false, message: 'Field wajib: oltName, slot, port, onuId' });
+  }
+  const slotNum = Number(slot), portNum = Number(port), onuIdNum = Number(onuId);
+  if (![slotNum, portNum, onuIdNum].every(n => Number.isInteger(n) && n >= 0 && n < 1000)) {
+    return res.status(400).json({ success: false, message: 'slot/port/onuId harus berupa angka' });
+  }
+  const oltCfg = OLT_CONFIG[oltName];
+  if (!oltCfg) return res.status(404).json({ success: false, message: `OLT "${oltName}" tidak ditemukan` });
+
+  const iface = `gpon-onu_1/${slotNum}/${portNum}:${onuIdNum}`;
+  const key = `${oltName}:${iface}`, last = onuRebootLast.get(key) || 0;
+  if (Date.now() - last < 60000) {
+    return res.status(429).json({ success: false, message: 'ONU ini baru saja di-reboot. Tunggu sekitar 1 menit sebelum mencoba lagi.' });
+  }
+  onuRebootLast.set(key, Date.now());
+
+  const commands = [`conf t`, `pon-onu-mng ${iface}`, { cmd: `reboot`, confirm: /\[\s*(?:yes|y)\s*\/\s*(?:no|n)\s*\]|\(\s*y\s*\/\s*n\s*\)|are you sure|confirm/i, answer: `yes` }, `end`];
+  const log = [];
+  const record = (result, detail) => { try { db.prepare('INSERT INTO onu_action_log (username, olt, iface, action, result, detail) VALUES (?,?,?,?,?,?)').run(req.user.username, oltName, iface, 'reboot', result, String(detail || '').slice(0, 300)); } catch (e) {} };
+  try {
+    log.push(`[INFO] Connecting to ${oltCfg.host}:${oltCfg.port || 23} via Telnet...`);
+    await telnetExec(oltCfg, commands, log);
+    // telnetExec hanya mencatat [WARN] tanpa melempar error — deteksi manual penolakan OLT
+    const warn = log.find(l => l.startsWith('[WARN]') && l.includes('reboot'));
+    const silent = warn && /response not received|timeout|timed out/i.test(warn);   // OLT tidak membalas prompt — reboot bisa saja tetap jalan
+    const rejected = (warn && !silent) ? warn : log.find(l => /^\[OUT\].*(%\s*error|invalid|incomplete|unrecognized|not exist|offline|fail)/is.test(l));
+    if (silent && !rejected) {
+      record('uncertain', warn);
+      return res.json({ success: true, uncertain: true, message: 'Perintah dikirim, tetapi OLT tidak membalas. Cek status ONU beberapa saat lagi.', log: log.join('\n') });
+    }
+    if (rejected) {
+      onuRebootLast.delete(key);
+      record('failed', rejected);
+      return res.status(502).json({ success: false, message: 'OLT menolak perintah reboot: ' + rejected.replace(/^\[\w+\]\s*/, '').slice(0, 200), log: log.join('\n') });
+    }
+    log.push(`[OK]   Perintah reboot dikirim ke ${iface}`);
+    record('ok', '');
+    console.log(`[ONU-REBOOT] ${req.user.username} reboot ${oltName} ${iface}`);
+    res.json({ success: true, message: 'Perintah reboot dikirim. ONU akan offline beberapa menit lalu online kembali.', log: log.join('\n') });
+  } catch (err) {
+    onuRebootLast.delete(key);
+    record('error', err.message);
+    log.push(`[ERR]  ${err.message}`);
+    res.status(500).json({ success: false, message: 'Gagal terhubung ke OLT: ' + err.message, log: log.join('\n') });
+  }
+});
+
 app.delete('/api/snmp/onu-delete', requireAuth, async (req, res) => {
   const { oltName, slot, port, onuId } = req.body;
 
@@ -1934,13 +2015,18 @@ app.post('/api/poll-now', requireAuth, async (req, res) => {
 // -------------------------------------------------------
 
 const POLL_INTERVAL_MS = 60 * 1000; // 60 detik (30 dtk terlalu agresif untuk agent SNMP ZTE C300)
+// OLT non-C300 (mis. C320) boleh lebih sering. Bisa diubah lewat env POLL_INTERVAL_FAST_SEC (min 15).
+const POLL_INTERVAL_FAST_MS = Math.max(15, parseInt(process.env.POLL_INTERVAL_FAST_SEC, 10) || 30) * 1000;
+const pollIntervalFor = (name) => /C300/.test(name) ? POLL_INTERVAL_MS : POLL_INTERVAL_FAST_MS;
+const oltNextPoll = new Map();   // oltName -> timestamp poll berikutnya
+const oltPolling = new Set();    // OLT yang sedang dipoll (cegah tumpang tindih)
 // Data yang jarang berubah (nama, serial, rx power, last online/offline, kesehatan card)
 // hanya di-walk tiap SLOW_EVERY siklus. Status online/offline di-walk SETIAP siklus.
 const SLOW_EVERY = 5;
 const SNMP_WALK_GAP_MS = 500; // jeda antar walk ke OLT yang sama
 const oltPollCount = new Map(); // oltName -> jumlah siklus sukses
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-let nextPollTime = Date.now() + POLL_INTERVAL_MS;
+let nextPollTime = Date.now() + POLL_INTERVAL_MS; // dihitung ulang dari oltNextPoll (yang paling dekat)
 let pollingInProgress = false; // guard supaya poll berikutnya tidak tumpang tindih kalau poll sebelumnya belum selesai
 
 // --- TELEGRAM NOTIFIKASI ---
@@ -2194,8 +2280,10 @@ async function snmpFetchOnus(oltName, oltCfg, forceSlow = false) {
   const onlineSuffixes = statusRows
     .filter(r => Number(r.value) === 3)
     .map(r => r.oid.replace(OID.onuOperStatus + '.', ''));
+  const isC300 = /C300/.test(oltName);
+  const parallel = !isC300 && SNMP_PARALLEL;
   const walkOptional = async (key) => {
-    await sleep(SNMP_WALK_GAP_MS);
+    if (!parallel) await sleep(SNMP_WALK_GAP_MS);
     try {
       if (/C300/.test(oltName) && key === 'onuRxPower') {
         return await getByOnu(oltName, host, OID[key], key, onlineSuffixes);
@@ -2208,11 +2296,16 @@ async function snmpFetchOnus(oltName, oltCfg, forceSlow = false) {
   };
   let nameRows = null, rxRows = null, snRows = null, loRows = null, lofRows = null;
   if (slow) {
-    nameRows = await walkOptional('onuName');
-    rxRows   = await walkOptional('onuRxPower');
-    snRows   = await walkOptional('onuSerial');
-    loRows   = await walkOptional('onuLastOnline');
-    lofRows  = await walkOptional('onuLastOffline');
+    if (parallel) {
+      [nameRows, rxRows, snRows, loRows, lofRows] = await Promise.all(
+        ['onuName', 'onuRxPower', 'onuSerial', 'onuLastOnline', 'onuLastOffline'].map(walkOptional));
+    } else {
+      nameRows = await walkOptional('onuName');
+      rxRows   = await walkOptional('onuRxPower');
+      snRows   = await walkOptional('onuSerial');
+      loRows   = await walkOptional('onuLastOnline');
+      lofRows  = await walkOptional('onuLastOffline');
+    }
     if (nameRows && !nameRows.length) nameRows = null;
   }
   // C300: redaman diambil bertahap (rotasi) di SETIAP siklus, bukan hanya siklus slow
@@ -2319,14 +2412,20 @@ async function snmpFetchOnus(oltName, oltCfg, forceSlow = false) {
 // Best-effort: kalau OID ini tidak didukung firmware tertentu, kembalikan array kosong
 // tanpa melempar error (supaya tidak mengganggu polling ONU yang jadi fungsi utama).
 async function snmpFetchCardHealth(oltName, host) {
+  const cardParallel = !/C300/.test(oltName) && SNMP_PARALLEL;
   const walkCard = async (key) => {
-    await sleep(SNMP_WALK_GAP_MS);
+    if (!cardParallel) await sleep(SNMP_WALK_GAP_MS);
     try { return await timedSubtree(oltName, host, OID[key], key); } catch (e) { return []; }
   };
-  const typeRows   = await walkCard('cardType');
-  const statusRows = await walkCard('cardOperStatus');
-  const cpuRows    = await walkCard('cardCpuLoad');
-  const memRows    = await walkCard('cardMemUsage');
+  let typeRows, statusRows, cpuRows, memRows;
+  if (cardParallel) {
+    [typeRows, statusRows, cpuRows, memRows] = await Promise.all(['cardType', 'cardOperStatus', 'cardCpuLoad', 'cardMemUsage'].map(walkCard));
+  } else {
+    typeRows   = await walkCard('cardType');
+    statusRows = await walkCard('cardOperStatus');
+    cpuRows    = await walkCard('cardCpuLoad');
+    memRows    = await walkCard('cardMemUsage');
+  }
 
   if (!cpuRows.length && !memRows.length && !typeRows.length) return [];
 
@@ -2449,6 +2548,8 @@ app.get('/api/olt-health', requireAuth, (req, res) => {
 
 // Poll satu OLT ? simpan ke DB
 async function pollOlt(oltName, oltCfg, forceSlow = false) {
+  if (oltPolling.has(oltName)) { console.log(`[POLLER] Skip ${oltName}: poll sebelumnya masih berjalan`); return; }
+  oltPolling.add(oltName);
   const t0 = Date.now();
   console.log(`[POLLER] Polling ${oltName} (${oltCfg.host})...`);
   try {
@@ -2484,44 +2585,13 @@ async function pollOlt(oltName, oltCfg, forceSlow = false) {
       VALUES (?, ?, ?, 0, 0, 0, ?)
     `).run(oltName, nowJsErr, duration, err.message);
     console.error(`[POLLER] ${oltName} error: ${err.message}`);
+  } finally {
+    oltPolling.delete(oltName);
   }
 }
 
-// Poll semua OLT secara paralel
-// Deduplikasi berdasarkan host:port agar OLT dengan IP sama tidak di-poll ganda
-async function pollAllOlts() {
-  if (pollingInProgress) {
-    console.log('[POLLER] Skip: polling sebelumnya masih berjalan (belum selesai)');
-    return;
-  }
-  pollingInProgress = true;
-  const tStart = Date.now();
-
-  try {
-
-  const entries = Object.entries(OLT_CONFIG);
-  console.log(`[POLLER] Mulai polling ${entries.length} OLT...`);
-
-  // Deduplikasi: kelompokkan OLT berdasarkan host:port
-  // Jika ada dua OLT dengan host:port sama, hanya poll satu kali
-  const seenHosts = new Map(); // key: "host:port" ? name OLT pertama yang akan dipoll
-  const pollEntries = [];      // entries yang benar-benar akan dipoll
-  const skipEntries = [];      // entries yang diskip karena IP duplikat
-
-  for (const [name, cfg] of entries) {
-    const hostKey = `${cfg.host}:${cfg.port || 23}`;
-    if (!seenHosts.has(hostKey)) {
-      seenHosts.set(hostKey, name);
-      pollEntries.push([name, cfg]);
-    } else {
-      skipEntries.push({ name, duplicateOf: seenHosts.get(hostKey) });
-      console.log(`[POLLER] Skip ${name} � IP sama dengan ${seenHosts.get(hostKey)} (${cfg.host})`);
-    }
-  }
-
-  await Promise.allSettled(pollEntries.map(([name, cfg]) => pollOlt(name, cfg)));
-
-  // Salin data cache dari OLT yang dipoll ke OLT yang diskip (IP sama)
+// Salin data cache dari OLT yang dipoll ke OLT yang diskip (IP sama)
+function copyCacheToDuplicates(skipEntries) {
   for (const { name, duplicateOf } of skipEntries) {
     try {
       const sourceRows = db.prepare(
@@ -2576,6 +2646,43 @@ async function pollAllOlts() {
       console.error(`[POLLER] Gagal salin cache ke ${name}: ${e.message}`);
     }
   }
+}
+
+// Poll semua OLT secara paralel (dipakai untuk poll manual 'Poll semua')
+// Deduplikasi berdasarkan host:port agar OLT dengan IP sama tidak di-poll ganda
+async function pollAllOlts() {
+  if (pollingInProgress) {
+    console.log('[POLLER] Skip: polling sebelumnya masih berjalan (belum selesai)');
+    return;
+  }
+  pollingInProgress = true;
+  const tStart = Date.now();
+
+  try {
+
+  const entries = Object.entries(OLT_CONFIG);
+  console.log(`[POLLER] Mulai polling ${entries.length} OLT...`);
+
+  // Deduplikasi: kelompokkan OLT berdasarkan host:port
+  // Jika ada dua OLT dengan host:port sama, hanya poll satu kali
+  const seenHosts = new Map(); // key: "host:port" ? name OLT pertama yang akan dipoll
+  const pollEntries = [];      // entries yang benar-benar akan dipoll
+  const skipEntries = [];      // entries yang diskip karena IP duplikat
+
+  for (const [name, cfg] of entries) {
+    const hostKey = `${cfg.host}:${cfg.port || 23}`;
+    if (!seenHosts.has(hostKey)) {
+      seenHosts.set(hostKey, name);
+      pollEntries.push([name, cfg]);
+    } else {
+      skipEntries.push({ name, duplicateOf: seenHosts.get(hostKey) });
+      console.log(`[POLLER] Skip ${name} � IP sama dengan ${seenHosts.get(hostKey)} (${cfg.host})`);
+    }
+  }
+
+  await Promise.allSettled(pollEntries.map(([name, cfg]) => pollOlt(name, cfg)));
+
+  copyCacheToDuplicates(skipEntries);
 
   const durationTotal = Date.now() - tStart;
   console.log(`[POLLER] Semua OLT selesai dipoll dalam ${durationTotal}ms`);
@@ -2584,18 +2691,44 @@ async function pollAllOlts() {
     console.error(`[POLLER] pollAllOlts error: ${e.message}`);
   } finally {
     pollingInProgress = false;
-    nextPollTime = Date.now() + POLL_INTERVAL_MS;
-    console.log(`[POLLER] Poll berikutnya: ${new Date(nextPollTime).toLocaleTimeString('id-ID')}`);
-
-    // Jadwalkan poll berikutnya SETELAH poll saat ini benar-benar selesai
-    // (bukan setInterval tetap) supaya tidak overlap kalau durasi polling
-    // pernah lebih lama dari POLL_INTERVAL_MS.
-    setTimeout(pollAllOlts, POLL_INTERVAL_MS);
   }
 }
 
-// Jalankan poller pertama kali saat server start (delay 3 detik)
-setTimeout(pollAllOlts, 3000);
+// Penjadwalan: tiap OLT (per host) punya loop sendiri, jadi OLT yang lambat (mis. C300)
+// tidak menahan OLT yang cepat. Interval dihitung dari AWAL poll (bukan dari selesai),
+// jadi siklus = max(interval, durasi poll) bukan durasi + interval.
+function refreshNextPollTime() {
+  const v = [...oltNextPoll.values()];
+  nextPollTime = v.length ? Math.min(...v) : Date.now() + POLL_INTERVAL_MS;
+}
+function startPollerLoops() {
+  const groups = new Map(); // host:port -> { name, cfg, dups: [] }
+  for (const [name, cfg] of Object.entries(OLT_CONFIG)) {
+    const key = `${cfg.host}:${cfg.port || 23}`;
+    if (!groups.has(key)) groups.set(key, { name, cfg, dups: [] });
+    else groups.get(key).dups.push({ name, duplicateOf: groups.get(key).name });
+  }
+  let i = 0;
+  for (const g of groups.values()) {
+    const interval = pollIntervalFor(g.name);
+    const run = async () => {
+      const t = Date.now();
+      try { await pollOlt(g.name, g.cfg); copyCacheToDuplicates(g.dups); }
+      catch (e) { console.error(`[POLLER] loop ${g.name}: ${e.message}`); }
+      const wait = Math.max(5000, interval - (Date.now() - t));
+      oltNextPoll.set(g.name, Date.now() + wait);
+      refreshNextPollTime();
+      setTimeout(run, wait);
+    };
+    // sebar start 1,5 dtk antar OLT supaya tidak serentak
+    const first = 3000 + (i++) * 1500;
+    oltNextPoll.set(g.name, Date.now() + first);
+    setTimeout(run, first);
+  }
+  refreshNextPollTime();
+  console.log(`[POLLER] ${groups.size} loop poller aktif (C300: ${POLL_INTERVAL_MS / 1000}s, lainnya: ${POLL_INTERVAL_FAST_MS / 1000}s)`);
+}
+startPollerLoops();
 
 // --- CLEANUP OTOMATIS poll_log (simpan 3 hari terakhir) ---
 const POLL_LOG_RETENTION_DAYS = 3;
@@ -2639,6 +2772,9 @@ async function mikrotikExec(cfg, commands) {
     password: cfg.password,
     timeout:  10,
   });
+  // Wajib: tanpa listener, event 'error' (mis. timeout 10 dtk) mematikan seluruh proses Node.
+  // Kegagalannya tetap sampai ke pemanggil lewat promise connect()/write().
+  conn.on('error', (e) => console.warn(`[MIKROTIK] ${cfg.host}: ${e && e.message ? e.message : e}`));
 
   await conn.connect();
   try {
@@ -4372,6 +4508,15 @@ app.post('/api/report/send-now', requireAuth, async (req, res) => {
 // ============================================================
 // END PATCH: Ringkasan Harian
 // ============================================================
+
+// Jaring pengaman: error jaringan dari library pihak ketiga (RouterOS API, socket, SNMP)
+// tidak boleh mematikan server NOC. Error lain tetap dicatat lalu proses keluar seperti biasa.
+const _isNetErr = (e) => e && (e.name === 'RosException' || /^(SOCKTMOUT|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|EPIPE)$/.test(String(e.errno || e.code || '')));
+process.on('uncaughtException', (e) => {
+  console.error('[UNCAUGHT]', e && e.stack ? e.stack : e);
+  if (!_isNetErr(e)) process.exit(1);
+});
+process.on('unhandledRejection', (e) => { console.error('[UNHANDLED-REJECTION]', e && e.message ? e.message : e); });
 
 // --- PORT ---
 const PORT = process.env.PORT || 3000;
