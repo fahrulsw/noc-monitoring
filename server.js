@@ -2358,6 +2358,23 @@ async function snmpFetchOnus(oltName, oltCfg, forceSlow = false) {
     rxMap[full.replace(/\.1$/, '')] = r.value;
   });
 
+  // Redaman cepat: ONU yang baru online (sebelumnya offline) atau online tapi redamannya
+  // belum ada di cache diambil lewat GET langsung di SETIAP siklus, tanpa menunggu siklus slow.
+  const needRx = onlineSuffixes.filter(sf => {
+    const c = cacheMap[sf];
+    if (rxMap[sf] !== undefined) return false;
+    return !c || !c.online || c.rx_power == null || c.rx_power === '';
+  }).slice(0, 40);
+  if (needRx.length) {
+    try {
+      const quick = await getByOnu(oltName, host, OID.onuRxPower, 'onuRxPower', needRx, 6000);
+      quick.forEach(r => {
+        const full = r.oid.replace(OID.onuRxPower + '.', '');
+        rxMap[full.replace(/\.1$/, '')] = r.value;
+      });
+    } catch (e) { /* tetap pakai cache; dicoba lagi siklus berikutnya */ }
+  }
+
   const snMapLocal = {};
   (snRows || []).forEach(r => {
     const suffix = r.oid.replace(OID.onuSerial + '.', '');
@@ -2412,10 +2429,11 @@ async function snmpFetchOnus(oltName, oltCfg, forceSlow = false) {
     // Field lambat: nilai baru kalau berhasil di-walk, kalau tidak pakai cache
     // 65535 = "tidak ada data" dari agent -> rxPowerToDbm menghasilkan null.
     // Untuk ONU online, nilai valid terakhir dari cache dipertahankan.
-    const rxNew = rxRows ? rxPowerToDbm(rxMap[suffix] !== undefined ? rxMap[suffix] : null) : null;
-    const rxPower = rxRows
-      ? (rxNew !== null ? rxNew : (st.online && c.rx_power != null ? c.rx_power : null))
-      : (c.rx_power !== undefined ? c.rx_power : null);
+    // ONU tidak online (LOS/offline/dying gasp) -> redaman langsung dikosongkan, tiap siklus.
+    const rxNew = rxMap[suffix] !== undefined ? rxPowerToDbm(rxMap[suffix]) : null;
+    const rxPower = !st.online
+      ? null
+      : (rxNew !== null ? rxNew : (c.rx_power !== undefined ? c.rx_power : null));
     const serialNumber = snRows ? (snMapLocal[suffix] || c.serial_number || '—') : (c.serial_number || '—');
     const lastOnline  = loRows  ? (lastOnlineMap[suffix]  || null) : (c.last_online  || null);
     const lastOffline = lofRows ? (lastOfflineMap[suffix] || null) : (c.last_offline || null);

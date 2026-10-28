@@ -4946,8 +4946,19 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // ─── VERSI APP & CHANGELOG ───
   // Tambah rilis baru di PALING ATAS array, lalu ubah APP_VERSION. Tipe: new | imp | fix
-  const APP_VERSION = '1.6.0';
+  const APP_VERSION = '1.7.1';
   const APP_CHANGELOG = [
+    { v: '1.7.1', date: '28 Okt 2026', items: [
+      ['fix', 'Redaman ONU langsung kosong saat status LOS/offline, tidak lagi menampilkan nilai lama.'],
+      ['fix', 'Redaman ONU yang baru online langsung diambil di siklus berikutnya, tidak menunggu siklus lambat.'],
+    ] },
+    { v: '1.7.0', date: '28 Okt 2026', items: [
+      ['new', 'Dropdown Port di Monitor ONU menampilkan nama desa dari OLT: "Port 2 - BOTOSENGON" ("-" jika belum diberi nama).'],
+      ['new', 'Asisten AI pindah ke Groq dan bisa membaca Router & Switch, PPPoE aktif, serta riwayat aktivasi.'],
+      ['new', 'Favicon baru.'],
+      ['imp', 'Kolom pencarian dan filter slot/port di Monitor ONU diseragamkan gayanya.'],
+      ['fix', 'Jendela CMD tidak lagi berkedip saat ping di Windows; input host monitoring diperketat.'],
+    ] },
     { v: '1.6.0', date: '27 Okt 2026', items: [
       ['new', 'Versi aplikasi dan changelog di sidebar.'],
       ['fix', 'Server tidak lagi mati saat Mikrotik timeout (error RouterOS tertangani).'],
