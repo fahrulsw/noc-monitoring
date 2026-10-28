@@ -1,3 +1,36 @@
+// Windows: setiap exec/spawn dari modul mana pun otomatis memakai windowsHide:true, supaya
+// jendela CMD tidak berkedip (mis. ping periodik). Linux/macOS tidak terpengaruh.
+// Diagnosa: DEBUG_SPAWN=1 juga mencatat setiap program yang dipanggil Node beserta asal kodenya.
+if (process.platform === 'win32' || process.env.DEBUG_SPAWN || process.env.BLOCK_SPAWN) {
+  const cp = require('child_process');
+  const hide = process.platform === 'win32';
+  for (const fn of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork']) {
+    const orig = cp[fn];
+    cp[fn] = function (...a) {
+      if (process.env.DEBUG_SPAWN) {
+        const where = (new Error().stack || '').split('\n').slice(2, 6).map(l => l.trim()).filter(l => !l.includes('node:internal')).join(' <- ');
+        console.log(`[SPAWN] ${fn}(${JSON.stringify(a[0])}${Array.isArray(a[1]) ? ' ' + JSON.stringify(a[1]) : ''}) dari: ${where}`);
+      }
+      if (process.env.BLOCK_SPAWN) {   // uji isolasi: tidak ada program luar yang benar-benar dijalankan
+        const cb = typeof a[a.length - 1] === 'function' ? a[a.length - 1] : null;
+        const err = new Error('BLOCK_SPAWN aktif: ' + fn + ' diblokir'); err.code = 'EBLOCKED';
+        if (fn.endsWith('Sync')) throw err;
+        const { EventEmitter } = require('events'); const fake = new EventEmitter(); fake.kill = () => {}; fake.stdout = fake.stderr = new EventEmitter(); fake.stdin = { end() {}, write() {} };
+        setImmediate(() => { if (cb) cb(err, '', ''); else fake.emit('error', err); });
+        return fake;
+      }
+      if (hide) {
+        const end = typeof a[a.length - 1] === 'function' ? a.length - 1 : a.length;   // sebelum callback
+        let oi = -1;
+        for (let i = 1; i < end; i++) { const v = a[i]; if (v && typeof v === 'object' && !Array.isArray(v)) oi = i; }
+        if (oi >= 0) a[oi] = Object.assign({}, a[oi], { windowsHide: a[oi].windowsHide !== false });
+        else a.splice(end, 0, { windowsHide: true });
+      }
+      return orig.apply(this, a);
+    };
+  }
+  if (process.env.DEBUG_SPAWN) console.log('[SPAWN] pencatatan child_process aktif');
+}
 const express = require('express');
 const { Telnet } = require('telnet-client');
 const cors = require('cors');
@@ -285,7 +318,7 @@ const OLT_CONFIG = {
     vendor: 'OLT2',
   },
   'OLT-C320-MINTRENG': {
-    host: '10.136.20.1',
+    host: '10.136.2.1',
     username: 'zte',
     password: 'zte',
     port: 233,
@@ -2411,6 +2444,90 @@ async function snmpFetchOnus(oltName, oltCfg, forceSlow = false) {
 // --- Fetch kesehatan chassis (CPU/RAM per card/slot) ---
 // Best-effort: kalau OID ini tidak didukung firmware tertentu, kembalikan array kosong
 // tanpa melempar error (supaya tidak mengganggu polling ONU yang jadi fungsi utama).
+// --- NAMA PORT PON (ifAlias dari OLT: "interface gpon-olt_1/1/2 -> name BOTOSENGON") ---
+db.exec(`CREATE TABLE IF NOT EXISTS olt_port_names (
+  olt_name TEXT NOT NULL, slot INTEGER NOT NULL, port INTEGER NOT NULL, name TEXT, updated_at TEXT,
+  PRIMARY KEY (olt_name, slot, port)
+)`);
+const PORTNAME_OID = { ifDescr: '1.3.6.1.2.1.2.2.1.2', ifName: '1.3.6.1.2.1.31.1.1.1.1', ifAlias: '1.3.6.1.2.1.31.1.1.1.18' };
+const _portNameBusy = new Set();
+const _PON_RE = /gpon[-_ ]?olt[-_ ]?(\d+)\/(\d+)\/(\d+)|^gpon[-_](\d+)\/(\d+)\/(\d+)$/i;
+const _snmpStr = (v) => Buffer.isBuffer(v) ? v.toString('utf8') : (v == null ? '' : String(v));
+// Cadangan bila SNMP tidak menyimpan nama port: baca konfigurasi interface lewat CLI
+//   show running-config interface gpon-olt_1/<slot>/<port>   ->   baris "  name BOTOSENGON"
+// Dibatasi sekali per 30 menit per OLT (nama port jarang berubah) supaya tidak membebani OLT.
+const _portNameCliAt = new Map();
+async function cliFetchPortNames(oltName, force = false) {
+  const cfg = OLT_CONFIG[oltName];
+  if (!cfg) return 0;
+  if (!force && Date.now() - (_portNameCliAt.get(oltName) || 0) < 30 * 60 * 1000) return 0;
+  _portNameCliAt.set(oltName, Date.now());
+  const ports = db.prepare('SELECT DISTINCT slot, port FROM onu_cache WHERE olt_name = ? AND slot IS NOT NULL AND port IS NOT NULL ORDER BY slot, port').all(oltName)
+    .filter(r => Number.isInteger(r.slot) && Number.isInteger(r.port));
+  if (!ports.length) return 0;
+  const cmds = ['terminal length 0', ...ports.map(r => `show running-config interface gpon-olt_1/${r.slot}/${r.port}`)];
+  const log = [];
+  try { await telnetExec(cfg, cmds, log); } catch (e) { console.log(`[POLLER][PORTNAME] ${oltName}: CLI gagal — ${e.message}`); return 0; }
+  // Pecah log per perintah: "[CMD]  <perintah>" diikuti satu/lebih blok "[OUT]  <hasil>"
+  const found = []; let cur = null;
+  for (const line of log.join('\n').split(/\r?\n/)) {
+    const m = /^\[CMD\]\s+show running-config interface gpon-olt_1\/(\d+)\/(\d+)\s*$/.exec(line);
+    if (m) { cur = { slot: +m[1], port: +m[2], name: null }; found.push(cur); continue; }
+    if (/^\[(CMD|OK|INFO|WARN|ERR)\]/.test(line)) { if (!/^\[OUT\]/.test(line)) cur = null; continue; }
+    if (cur && !cur.name) { const n = /^\s*(?:\[OUT\]\s+)?name\s+(\S.*?)\s*$/i.exec(line); if (n) cur.name = n[1]; }
+  }
+  const named = found.filter(f => f.name);
+  if (!named.length) { console.log(`[POLLER][PORTNAME] ${oltName}: CLI tidak menemukan baris "name" (${ports.length} port dicoba)`); return 0; }
+  const now = new Date().toLocaleString('sv-SE', { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }).replace('T', ' ');
+  const ins = db.prepare('INSERT OR REPLACE INTO olt_port_names (olt_name, slot, port, name, updated_at) VALUES (?,?,?,?,?)');
+  db.transaction(() => { db.prepare('DELETE FROM olt_port_names WHERE olt_name = ?').run(oltName); named.forEach(f => ins.run(oltName, f.slot, f.port, f.name, now)); })();
+  console.log(`[POLLER][PORTNAME] ${oltName}: ${named.length} port PON bernama (via CLI)`);
+  return named.length;
+}
+async function snmpFetchPortNames(oltName, host) {
+  if (_portNameBusy.has(oltName)) return 0;
+  _portNameBusy.add(oltName);
+  try {
+    const safe = async (oid, label) => { try { return await timedSubtree(oltName, host, oid, label); } catch (e) { return []; } };
+    const descrRows = await safe(PORTNAME_OID.ifDescr, 'ifDescr');
+    const nameRows  = descrRows.length ? [] : await safe(PORTNAME_OID.ifName, 'ifName');
+    const aliasRows = await safe(PORTNAME_OID.ifAlias, 'ifAlias');
+    const idxOf = (r, root) => r.oid.replace(root + '.', '');
+    const alias = {}; aliasRows.forEach(r => { alias[idxOf(r, PORTNAME_OID.ifAlias)] = _snmpStr(r.value).trim(); });
+    const found = [];
+    const scan = (rows, root) => rows.forEach(r => {
+      const m = _PON_RE.exec(_snmpStr(r.value)); if (!m) return;
+      const slot = parseInt(m[2] || m[5], 10), port = parseInt(m[3] || m[6], 10);
+      const nm = alias[idxOf(r, root)];
+      if (nm) found.push({ slot, port, name: nm });
+    });
+    scan(descrRows, PORTNAME_OID.ifDescr); scan(nameRows, PORTNAME_OID.ifName);
+    if (!found.length) {
+      const sample = descrRows.slice(0, 4).map(r => _snmpStr(r.value)).join(' | ');
+      console.log(`[POLLER][PORTNAME] ${oltName}: SNMP tidak menemukan nama port (ifDescr ${descrRows.length} baris, ifAlias ${aliasRows.length} baris; contoh ifDescr: ${sample || '-'}) — mencoba CLI`);
+      return await cliFetchPortNames(oltName);
+    }
+    const now = new Date().toLocaleString('sv-SE', { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }).replace('T', ' ');
+    const ins = db.prepare('INSERT OR REPLACE INTO olt_port_names (olt_name, slot, port, name, updated_at) VALUES (?,?,?,?,?)');
+    db.transaction(() => { db.prepare('DELETE FROM olt_port_names WHERE olt_name = ?').run(oltName); found.forEach(f => ins.run(oltName, f.slot, f.port, f.name, now)); })();
+    console.log(`[POLLER][PORTNAME] ${oltName}: ${found.length} port PON bernama`);
+    return found.length;
+  } finally { _portNameBusy.delete(oltName); }
+}
+
+app.get('/api/snmp/port-names', requireAuth, (req, res) => {
+  const oltName = String(req.query.oltName || '');
+  const cfg = OLT_CONFIG[oltName];
+  if (!cfg) return res.status(404).json({ success: false, message: 'OLT tidak ditemukan' });
+  // OLT duplikat (IP sama, mis. "- CCTV") memakai nama port milik OLT yang benar-benar dipoll
+  const sameHost = Object.entries(OLT_CONFIG).filter(([, c]) => c.host === cfg.host && (c.port || 23) === (cfg.port || 23)).map(([n]) => n);
+  const source = [oltName, ...sameHost].find(n => db.prepare('SELECT 1 FROM olt_port_names WHERE olt_name = ? LIMIT 1').get(n));
+  const rows = source ? db.prepare('SELECT slot, port, name FROM olt_port_names WHERE olt_name = ?').all(source) : [];
+  if (!rows.length) snmpFetchPortNames(sameHost[0] || oltName, cfg.host).catch(() => {});   // belum ada: ambil di latar belakang untuk pemakaian berikutnya
+  const names = {}; rows.forEach(r => { names[`${r.slot}/${r.port}`] = r.name; });
+  res.json({ success: true, names });
+});
+
 async function snmpFetchCardHealth(oltName, host) {
   const cardParallel = !/C300/.test(oltName) && SNMP_PARALLEL;
   const walkCard = async (key) => {
@@ -2567,6 +2684,10 @@ async function pollOlt(oltName, oltCfg, forceSlow = false) {
     } catch (healthErr) {
       console.log(`[POLLER][HEALTH] ${oltName}: gagal ambil CPU/RAM — ${healthErr.message}`);
     }
+
+    // Nama port PON (deskripsi interface di OLT) — jarang berubah, ikut siklus "lambat"; best-effort
+    try { if (data.slow) await snmpFetchPortNames(oltName, oltCfg.host); }
+    catch (pnErr) { console.log(`[POLLER][PORTNAME] ${oltName}: gagal — ${pnErr.message}`); }
 
     const duration = Date.now() - t0;
     const onlineCount = data.onus.filter(o => o.online).length;

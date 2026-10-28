@@ -8626,6 +8626,8 @@ async function loadMonitor() {
     return;
   }
 
+  loadPortNames(oltName);   // paralel; saat selesai dropdown Port disegarkan
+
   // UI: loading state
   document.getElementById('mon-empty').style.display = 'none';
   document.getElementById('mon-error').style.display = 'none';
@@ -8769,6 +8771,25 @@ async function loadMonitor() {
   }
 }
 
+// ─── NAMA PORT DARI OLT ("interface gpon-olt_1/1/2 → name BOTOSENGON") ───
+let monPortNames = {};                       // "slot/port" -> nama (dari deskripsi interface di OLT)
+let _monPortNamesOlt = '', _monPortNamesAt = 0;
+async function loadPortNames(oltName) {
+  if (!oltName) return;
+  if (oltName !== _monPortNamesOlt) { monPortNames = {}; _monPortNamesOlt = oltName; _monPortNamesAt = 0; }
+  // Nama port jarang berubah: tidak perlu diambil ulang tiap auto-refresh (cukup tiap 5 menit, atau bila masih kosong)
+  if (_monPortNamesAt && Date.now() - _monPortNamesAt < 300000 && Object.keys(monPortNames).length) return;
+  try {
+    const r = await fetch('/api/snmp/port-names?oltName=' + encodeURIComponent(oltName));
+    const j = await r.json();
+    if (j && j.success && j.names && document.getElementById('mon-olt-select').value === oltName) {
+      const changed = JSON.stringify(j.names) !== JSON.stringify(monPortNames);
+      monPortNames = j.names; _monPortNamesAt = Date.now();
+      if (changed && monitorLoaded) populateSlotFilter(true);
+    }
+  } catch (e) { /* tanpa nama dari OLT: dropdown memakai cadangan dari nama ONU */ }
+}
+
 // ─── FILTER SLOT / PORT ───────────────────────────────────────────────
 // retain=true → pertahankan nilai yg sedang dipilih jika masih tersedia di data baru
 function populateSlotFilter(retain) {
@@ -8808,16 +8829,15 @@ function _populatePortFor(slot, prevPort) {
 
   const ports = [...new Set(portsInSlot.map(o => o.port))].sort((a, b) => a - b);
 
+  // Nama = deskripsi port yang diatur di OLT ("interface gpon-olt_1/1/2 → name BOTOSENGON"), lihat loadPortNames().
+  // Port yang tidak punya nama di OLT ditandai "-".
+  const village = {};
+  ports.forEach(p => { village[p] = String(monPortNames[`${slot}/${p}`] || '').trim(); });
+
   portSel.innerHTML = '<option value="">Semua</option>';
   ports.forEach(p => {
-    // Ambil nama lokasi dari ONU pertama di port ini
-    const firstOnu = portsInSlot.find(o => o.port === p);
-    let portLabel = 'Port ' + p;
-    if (firstOnu && firstOnu.name) {
-      // Extract bagian sebelum ' - ' sebagai nama lokasi
-      const lokasi = firstOnu.name.split(' - ')[0].trim();
-      if (lokasi) portLabel = `Port ${p} - ${lokasi}`;
-    }
+    // Format: "Port <nomor> - <nama>"; port tanpa nama ditandai "-"
+    const portLabel = `Port ${p} - ${village[p] || '-'}`;
     const opt = document.createElement('option');
     opt.value = p;
     opt.textContent = portLabel;
@@ -11135,6 +11155,29 @@ input:focus, select:focus, textarea:focus {
   box-shadow: 0 0 0 4px var(--accent-dim) !important;
   background: var(--surface);
 }
+
+/* Kolom cari Monitor ONU: pembungkus yang membentuk pil, input di dalamnya polos (hindari kotak ganda) */
+.mon-search-modern { height: 40px; padding: 0 16px; gap: 9px; border-radius: 999px; min-width: 260px; transition: border-color .15s, box-shadow .15s; }
+.mon-search-modern:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border2)); }
+.mon-search-modern:focus-within { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-dim); }
+.mon-search-modern input[type="text"], .mon-search-modern input[type="text"]:hover, .mon-search-modern input[type="text"]:focus {
+  border: none !important; box-shadow: none !important; background: transparent !important; border-radius: 0 !important;
+  padding: 0 !important; height: 100%; outline: none;
+}
+@media (max-width: 700px) { .mon-search-modern { min-width: 0; } }
+/* Toolbar Monitor ONU: semua kontrol setinggi 40px, bentuk pil, serasi dengan kolom cari */
+.mon-toolbar-left, .mon-toolbar-right { gap: 10px; }
+select.mon-select-modern { height: 40px; padding: 0 36px 0 16px; border-radius: 999px; font-size: .76rem; font-weight: 600; }
+select.mon-select-modern.mon-select-sm { width: 128px; min-width: 128px; max-width: 128px; padding: 0 32px 0 16px; font-size: .74rem; }
+select.mon-select-modern { -webkit-appearance: none; appearance: none; background-repeat: no-repeat; background-position: right 15px center; background-size: 10px 6px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238a97aa' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+#mon-filter-port.mon-select-sm { width: 220px; min-width: 170px; max-width: 280px; }
+select.mon-select-modern:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border2)); }
+select.mon-select-modern:focus { border-color: var(--accent); }
+.mon-icon-btn { width: 40px; height: 40px; flex: 0 0 40px; border-radius: 50%; }
+.mon-icon-btn:hover { background: var(--accent-dim); }
+.mon-auto-toggle { height: 40px; padding: 0 18px; border-radius: 999px; font-weight: 700; }
+@media (max-width: 700px) { select.mon-select-modern.mon-select-sm { width: auto; min-width: 0; max-width: none; flex: 1 1 auto; } }
 .field label, .form-label { letter-spacing: .1em; }
 
 /* Tombol */
