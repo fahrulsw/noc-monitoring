@@ -66,6 +66,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // --- SQLITE SETUP ---
 const db = new Database(path.join(__dirname, 'history.db'));
+console.log('[DB] ' + path.join(__dirname, 'history.db'));
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS history (
@@ -318,7 +319,7 @@ const OLT_CONFIG = {
     vendor: 'OLT2',
   },
   'OLT-C320-MINTRENG': {
-    host: '10.136.2.1',
+    host: '10.136.20.1',
     username: 'zte',
     password: 'zte',
     port: 233,
@@ -733,10 +734,13 @@ app.post('/api/activate', requireAuth, async (req, res) => {
   }
 
   const script = generateScriptFinal(oltCfg.vendor, { slot, port, onuId, sn, lokasi, namaPelanggan, idPppoe });
+  const tplRow = db.prepare('SELECT updated_by, updated_at FROM script_templates WHERE vendor = ?').get(oltCfg.vendor);
+  const tplInfo = { profil: oltCfg.vendor, kustom: !!tplRow, diubah: tplRow ? `${tplRow.updated_at} oleh ${tplRow.updated_by || '-'}` : null };
+  console.log(`[ACTIVATE] ${oltName} -> profil ${tplInfo.profil} (${tplInfo.kustom ? 'KUSTOM ' + tplInfo.diubah : 'BAWAAN'}), push=${!!pushToOlt}`);
   const log = [];
 
   if (!pushToOlt) {
-    return res.json({ success: true, script, pushed: false });
+    return res.json({ success: true, script, pushed: false, template: tplInfo });
   }
 
   try {
@@ -811,10 +815,10 @@ app.post('/api/activate', requireAuth, async (req, res) => {
       log.push(`[WARN] Gagal ambil RX Power: ${rxErr.message}`);
     }
 
-    res.json({ success: true, script, pushed: true, log: log.join('\n'), rxPower });
+    res.json({ success: true, script, pushed: true, log: log.join('\n'), rxPower, template: tplInfo });
   } catch (err) {
     log.push(`[FAIL] Telnet Error: ${err.message}`);
-    res.status(500).json({ success: false, script, pushed: false, log: log.join('\n'), message: err.message });
+    res.status(500).json({ success: false, script, pushed: false, log: log.join('\n'), message: err.message, template: tplInfo });
   }
 });
 
@@ -3789,6 +3793,63 @@ app.post('/api/proxmox/test', requireAuth, async (req, res) => {
   }
 });
 
+// Pemakaian disk VM (QEMU) hanya diketahui lewat QEMU guest agent (get-fsinfo).
+// Di /cluster/resources, "disk" milik VM selalu 0; milik LXC sudah berisi pemakaian sebenarnya.
+// Hasil di-cache 60 dtk per VM; yang gagal (agent mati/tidak ada/izin kurang) di-cache 5 menit
+// supaya tidak menembak API terus-menerus. Fetch dibatasi paralel & waktu agar halaman tetap cepat.
+const _pveDiskCache = new Map(); // "server|node|vmid" -> { ts, used, total, err }
+const PVE_VFS_SKIP = /^(tmpfs|devtmpfs|squashfs|overlay|efivarfs|proc|sysfs|cgroup2?|ramfs|iso9660)$/i;
+function pveSumFsinfo(arr) {
+  const seen = new Set();
+  let used = 0, total = 0;
+  for (const f of (Array.isArray(arr) ? arr : [])) {
+    if (!f || PVE_VFS_SKIP.test(String(f.type || ''))) continue;
+    const t = Number(f['total-bytes']), u = Number(f['used-bytes']);
+    if (!(t > 0) || isNaN(u)) continue;
+    const key = String(f.name || f.mountpoint || '') + '|' + t; // bind mount / btrfs subvol = disk sama
+    if (seen.has(key)) continue;
+    seen.add(key); used += u; total += t;
+  }
+  return total > 0 ? { used, total } : null;
+}
+async function pveFillVmDisks(cfg, guests, budgetMs = 3500) {
+  const now = Date.now();
+  const todo = [];
+  for (const g of guests) {
+    if (g.type !== 'VM' || g.status !== 'running') continue;
+    const key = `${cfg.name}|${g.node}|${g.vmid}`;
+    const c = _pveDiskCache.get(key);
+    if (c) { g._diskC = c; }
+    const ttl = c && c.err ? 300000 : 60000;
+    if (!c || now - c.ts > ttl) todo.push({ g, key });
+  }
+  let i = 0;
+  const worker = async () => {
+    while (i < todo.length) {
+      const { g, key } = todo[i++];
+      try {
+        const r = await proxmoxFetch(cfg, `/nodes/${encodeURIComponent(g.node)}/qemu/${g.vmid}/agent/get-fsinfo`);
+        const sum = pveSumFsinfo(r && r.result !== undefined ? r.result : r);
+        _pveDiskCache.set(key, sum ? { ts: Date.now(), used: sum.used, total: sum.total } : { ts: Date.now(), err: 'kosong' });
+      } catch (e) {
+        _pveDiskCache.set(key, { ts: Date.now(), err: String(e.message || e).slice(0, 120) });
+      }
+      g._diskC = _pveDiskCache.get(key);
+    }
+  };
+  if (todo.length) {
+    await Promise.race([
+      Promise.all(Array.from({ length: Math.min(4, todo.length) }, worker)),
+      new Promise(r => setTimeout(r, budgetMs)),
+    ]);
+  }
+  for (const g of guests) {
+    const c = g._diskC; delete g._diskC;
+    if (c && c.total > 0) { g.diskUsed = c.used; g.diskAgentTotal = c.total; g.diskPct = Math.round(c.used / c.total * 1000) / 10; g.diskSource = 'agent'; }
+    else if (g.type === 'VM' && g.status === 'running') { g.diskSource = null; g.diskNote = c && c.err ? c.err : 'menunggu'; }
+  }
+}
+
 // --- RESOURCE: ringkasan node + VM/LXC + storage dalam satu panggilan ---
 // Pakai /cluster/resources — satu request sudah memuat semua node, qemu, lxc, storage
 // (cocok juga untuk standalone node tanpa cluster).
@@ -3827,6 +3888,9 @@ app.get('/api/proxmox/:name/resources', requireAuth, async (req, res) => {
       memTotal: g.maxmem || 0,
       memPct: pct(g.mem, g.maxmem),
       diskTotal: g.maxdisk || 0,
+      diskUsed: g.type === 'lxc' ? (g.disk || 0) : null,   // LXC: pemakaian sebenarnya; VM: diisi lewat guest agent
+      diskPct: g.type === 'lxc' ? pct(g.disk, g.maxdisk) : null,
+      diskSource: g.type === 'lxc' ? 'lxc' : null,
       netIn: g.netin || 0,                               // counter byte kumulatif
       netOut: g.netout || 0,
     })).filter(g => !g.template).sort((a, b) => a.vmid - b.vmid);
@@ -3840,6 +3904,8 @@ app.get('/api/proxmox/:name/resources', requireAuth, async (req, res) => {
       total: s.maxdisk || 0,
       pct: pct(s.disk, s.maxdisk),
     })).sort((a, b) => a.node.localeCompare(b.node) || a.storage.localeCompare(b.storage));
+
+    try { await pveFillVmDisks(cfg, guests); } catch (e) { console.error('[PVE] disk VM:', e.message); }
 
     res.json({
       success: true,

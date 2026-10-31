@@ -4078,7 +4078,7 @@ document.addEventListener('DOMContentLoaded', function() {
           <div class="pve-table-scroll">
             <table class="pve-table">
               <thead>
-                <tr><th>VMID</th><th>NAMA</th><th>TIPE</th><th>NODE</th><th>STATUS</th><th style="min-width:130px;">CPU</th><th style="min-width:170px;">RAM</th><th>UPTIME</th></tr>
+                <tr><th>VMID</th><th>NAMA</th><th>TIPE</th><th>NODE</th><th>STATUS</th><th style="min-width:130px;">CPU</th><th style="min-width:170px;">RAM</th><th style="min-width:170px;">DISK</th><th>UPTIME</th></tr>
               </thead>
               <tbody id="pve-guests-body"></tbody>
             </table>
@@ -4946,8 +4946,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // ─── VERSI APP & CHANGELOG ───
   // Tambah rilis baru di PALING ATAS array, lalu ubah APP_VERSION. Tipe: new | imp | fix
-  const APP_VERSION = '1.7.1';
+  const APP_VERSION = '1.8.0';
   const APP_CHANGELOG = [
+    { v: '1.8.0', date: '31 Okt 2026', items: [
+      ['new', 'Monitoring Proxmox menampilkan pemakaian disk tiap VM/LXC (LXC langsung, VM lewat QEMU guest agent).'],
+    ] },
+    { v: '1.7.2', date: '28 Okt 2026', items: [
+      ['imp', 'Log aktivasi kini menunjukkan template yang dipakai (profil, KUSTOM/BAWAAN, kapan diubah) untuk memudahkan pelacakan.'],
+    ] },
     { v: '1.7.1', date: '28 Okt 2026', items: [
       ['fix', 'Redaman ONU langsung kosong saat status LOS/offline, tidak lagi menampilkan nilai lama.'],
       ['fix', 'Redaman ONU yang baru online langsung diambil di siklus berikutnya, tidak menunggu siklus lambat.'],
@@ -6112,7 +6118,7 @@ document.addEventListener('DOMContentLoaded', function() {
     list.sort((a, b) => (b.status === 'running') - (a.status === 'running') || a.vmid - b.vmid);
     cnt.textContent = `· ${list.length}`;
     if (!list.length) {
-      body.innerHTML = '<tr><td colspan="8" class="pve-empty">Tidak ada VM/LXC.</td></tr>';
+      body.innerHTML = '<tr><td colspan="9" class="pve-empty">Tidak ada VM/LXC.</td></tr>';
       return;
     }
     body.innerHTML = list.map(g => {
@@ -6125,9 +6131,22 @@ document.addEventListener('DOMContentLoaded', function() {
         <td><span class="pve-pill ${running ? 'ok' : 'idle'}">${running ? 'RUNNING' : escHtml(String(g.status || '').toUpperCase())}</span></td>
         <td>${running ? pveBar(g.cpu) : '<span style="color:var(--muted2);">—</span>'}</td>
         <td>${running ? pveBar(g.memPct, `${pveBytes(g.memUsed)} / ${pveBytes(g.memTotal)}`) : '<span style="color:var(--muted2);">—</span>'}</td>
+        <td>${pveDiskCell(g, running)}</td>
         <td style="color:var(--muted);">${running ? pveUptime(g.uptime) : '—'}</td>
       </tr>`;
     }).join('');
+  }
+  // Disk: LXC = pemakaian sebenarnya; VM = lewat QEMU guest agent. Tanpa agent hanya tampil alokasi.
+  function pveDiskCell(g, running) {
+    if (!running) return '<span style="color:var(--muted2);">—</span>';
+    if (g.diskSource && g.diskUsed != null) {
+      const tot = g.diskSource === 'agent' ? g.diskAgentTotal : g.diskTotal;
+      return pveBar(g.diskPct, `${pveBytes(g.diskUsed)} / ${pveBytes(tot)}`);
+    }
+    const alloc = g.diskTotal ? pveBytes(g.diskTotal) : '—';
+    const why = g.diskNote === 'menunggu' ? 'Sedang diambil dari guest agent, muat ulang sebentar lagi.'
+      : 'Pemakaian tidak terbaca: aktifkan QEMU guest agent di VM (Options → QEMU Guest Agent) dan pasang qemu-guest-agent di dalam VM. Yang tampil adalah ukuran disk yang dialokasikan.' + (g.diskNote ? ' [' + g.diskNote + ']' : '');
+    return `<span style="color:var(--muted2);font-family:var(--mono);font-size:0.68rem;cursor:help;" title="${escHtml(why)}">— / ${alloc}</span>`;
   }
 
   // ── Modal tambah server ──
@@ -7606,6 +7625,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const data = await res.json();
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
 
+      if (data.template) appendLog('INFO', `Template script: profil ${data.template.profil} — ${data.template.kustom ? 'KUSTOM (diubah ' + data.template.diubah + ')' : 'BAWAAN (belum ada template tersimpan untuk profil ini)'}`);
       if (data.log) renderLogs(data.log);
       if (data.script) {
         currentScript = data.script;
