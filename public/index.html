@@ -4946,8 +4946,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // ─── VERSI APP & CHANGELOG ───
   // Tambah rilis baru di PALING ATAS array, lalu ubah APP_VERSION. Tipe: new | imp | fix
-  const APP_VERSION = '1.8.0';
+  const APP_VERSION = '1.8.1';
   const APP_CHANGELOG = [
+    { v: '1.8.1', date: '31 Okt 2026', items: [
+      ['fix', 'Tampilan HP: menu navigasi yang tertutup tombol versi kini muncul lagi (bisa digeser ke samping), lengkap dengan nama menu; tombol versi dibuat ringkas.'],
+    ] },
     { v: '1.8.0', date: '31 Okt 2026', items: [
       ['new', 'Monitoring Proxmox menampilkan pemakaian disk tiap VM/LXC (LXC langsung, VM lewat QEMU guest agent).'],
     ] },
@@ -11277,6 +11280,16 @@ select.mon-select-modern:focus { border-color: var(--accent); }
 .sidebar.collapsed .app-ver { width:auto; justify-content:center; padding:8px 0; margin:6px 6px 8px; }
 .sidebar.collapsed .app-ver-lbl, .sidebar.collapsed .app-ver-dot { display:none; }
 .sidebar.collapsed .app-ver-num { font-size:.58rem; }
+/* HP: sidebar jadi strip horizontal — tombol versi dibuat ringkas di ujung strip, menu tetap bisa digeser */
+@media (max-width: 700px) {
+  .sidebar-nav { flex: 1 1 auto !important; min-width: 0; }
+  /* label menu sempat disembunyikan aturan layar <=1100px; di HP strip horizontal, tampilkan lagi */
+  .sidebar .sidebar-item-label { opacity: 1; width: auto; overflow: visible; }
+  .sidebar .sidebar-section-label { display: none; }
+  .app-ver { flex: 0 0 auto; width: auto; margin: 0 6px; align-self: center; padding: 6px 10px; gap: 6px; border-radius: 12px; }
+  .app-ver-lbl { display: none; }
+  .app-ver-num { font-size: .6rem; }
+}
 #changelog-modal { display:none; position:fixed; inset:0; z-index:9999; align-items:center; justify-content:center; padding:16px; background:rgba(4,8,14,.62); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); }
 #changelog-modal.show { display:flex; }
 .cl-box { width:560px; max-width:100%; max-height:86vh; display:flex; flex-direction:column; background:var(--glass, var(--surface)); border:1px solid var(--border2); border-radius:26px; box-shadow:0 30px 80px rgba(0,0,0,.5); overflow:hidden; animation:cfIn .28s cubic-bezier(.2,1.2,.4,1) both; }
