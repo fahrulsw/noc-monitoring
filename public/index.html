@@ -4200,57 +4200,60 @@ document.addEventListener('DOMContentLoaded', function() {
             <span class="page-title">Ping Monitor</span>
             <span class="page-badge">UPTIME</span>
           </div>
-          <p class="page-sub">Monitor ICMP ping &amp; HTTP/HTTPS untuk perangkat internal maupun service eksternal</p>
+          <p class="page-sub">Pantau ICMP ping &amp; HTTP/HTTPS untuk perangkat internal maupun layanan eksternal</p>
         </div>
-        <button class="btn btn-primary" onclick="openUptimeAddModal()" style="font-size:0.78rem;padding:9px 18px;">+ Tambah Monitor</button>
-      </div>
-      <!-- Toolbar: dropdown pemisah Device / Website + ringkasan status -->
-      <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap;flex-shrink:0;">
-        <span style="font-family:var(--mono);font-size:0.65rem;color:var(--muted2);">Tampilkan:</span>
-        <select id="uptime-filter-category" onchange="renderUptimeList()" style="width:auto;min-width:190px;padding:5px 28px 5px 10px;font-size:0.75rem;">
-          <option value="all">Semua Monitor</option>
-          <option value="internal">Device (perangkat internal)</option>
-          <option value="external">Website (eksternal)</option>
-        </select>
-        <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-left:auto;">
-          <div style="font-family:var(--mono);font-size:0.65rem;">Total: <span id="up-sum-total" style="color:var(--text);font-weight:700;">0</span></div>
-          <div style="font-family:var(--mono);font-size:0.65rem;"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#2ecc71;margin-right:5px;"></span>UP: <span id="up-sum-up" style="color:var(--ok);font-weight:700;">0</span></div>
-          <div style="font-family:var(--mono);font-size:0.65rem;"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#e74c3c;margin-right:5px;"></span>RTO/DOWN: <span id="up-sum-down" style="color:var(--danger);font-weight:700;">0</span></div>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <span id="up-updated" style="font-family:var(--mono);font-size:0.65rem;color:var(--muted2);"></span>
+          <button class="term-action" onclick="loadUptimeMonitors(true)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            REFRESH
+          </button>
         </div>
       </div>
-      <div style="flex:1;overflow-y:auto;padding:16px 20px;scrollbar-width:thin;scrollbar-color:var(--border2) transparent;">
-        <div id="uptime-empty" style="text-align:center;padding:60px 20px;font-family:var(--mono);font-size:0.78rem;color:var(--muted2);">
-          Belum ada monitor. Klik "+ Tambah Monitor" untuk mulai memantau perangkat/layanan.
+      <div class="nd-body" id="up-body">
+        <div class="pve-stats" id="up-stats"></div>
+        <div class="nd-toolbar">
+          <div class="nd-tabs" id="up-tabs">
+            <button class="active" data-k="all" onclick="uptimeSetKind('all')">Semua</button>
+            <button data-k="internal" onclick="uptimeSetKind('internal')">Device</button>
+            <button data-k="external" onclick="uptimeSetKind('external')">Website</button>
+          </div>
+          <div class="nd-search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="up-q" placeholder="Cari nama / target…" oninput="renderUptimeList()"></div>
+          <label class="nd-check" title="Tampilkan hanya monitor yang sedang RTO / DOWN"><input type="checkbox" id="up-only-down" onchange="renderUptimeList()"> Hanya bermasalah</label>
+          <button class="olt-term-btn primary" style="margin-left:auto" onclick="openUptimeAddModal()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>MONITOR
+          </button>
         </div>
-        <div id="uptime-list" style="display:flex;flex-direction:column;gap:14px;"></div>
+        <div id="uptime-empty" class="pve-empty" style="display:none;"></div>
+        <div id="uptime-list" class="up-grid"></div>
       </div>
     </div><!-- /page-uptime -->
 
     <!-- MODAL: Tambah Monitor Uptime -->
-    <div id="uptime-add-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;align-items:center;justify-content:center;">
-      <div style="background:var(--surface);border:1px solid var(--border2);border-radius:12px;width:420px;max-width:95vw;padding:24px;">
-        <div style="font-family:var(--mono);font-size:0.8rem;font-weight:700;color:var(--accent);letter-spacing:0.06em;margin-bottom:18px;">TAMBAH MONITOR</div>
-        <div style="display:flex;flex-direction:column;gap:12px;">
+    <div id="uptime-add-modal" class="nd-overlay" onclick="if(event.target===this)closeUptimeAddModal()">
+      <div class="nd-box">
+        <div class="pve-modal-title"><span class="ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span><span style="width:auto;height:auto;background:none">TAMBAH MONITOR</span></div>
+        <div style="display:flex;flex-direction:column;gap:13px;">
           <div><label>Nama *</label><input type="text" id="uptime-form-name" placeholder="mis. Router Core Jakarta / Google Cloud"></div>
-          <div><label>Kategori</label>
-            <select id="uptime-form-category">
-              <option value="internal">Device — perangkat internal ISP sendiri</option>
-              <option value="external">Website — service/website eksternal</option>
-            </select>
+          <div class="up-seg-label">Kategori</div>
+          <div class="up-choice" id="up-choice-cat">
+            <button type="button" class="active" data-v="internal" onclick="uptimePick('cat','internal')"><b>Device</b><span>Perangkat internal ISP</span></button>
+            <button type="button" data-v="external" onclick="uptimePick('cat','external')"><b>Website</b><span>Layanan / situs eksternal</span></button>
           </div>
-          <div><label>Tipe Cek</label>
-            <select id="uptime-form-type" onchange="uptimeToggleTargetHint()">
-              <option value="ping">ICMP Ping (latency + packet loss, gaya SmokePing)</option>
-              <option value="http">HTTP/HTTPS (status, SSL, kode status, gaya Uptime Kuma)</option>
-            </select>
+          <div class="up-seg-label">Tipe cek</div>
+          <div class="up-choice" id="up-choice-type">
+            <button type="button" class="active" data-v="ping" onclick="uptimePick('type','ping')"><b>ICMP Ping</b><span>Latency &amp; packet loss</span></button>
+            <button type="button" data-v="http" onclick="uptimePick('type','http')"><b>HTTP / HTTPS</b><span>Status, SSL, kode status</span></button>
           </div>
+          <input type="hidden" id="uptime-form-category" value="internal">
+          <input type="hidden" id="uptime-form-type" value="ping">
           <div><label>Target *</label>
             <input type="text" id="uptime-form-target" placeholder="mis. 10.10.10.1 atau 8.8.8.8">
-            <div style="font-family:var(--mono);font-size:0.65rem;color:var(--muted2);margin-top:4px;" id="uptime-form-target-hint">* Isi IP atau hostname, mis. 10.10.10.1</div>
+            <div style="font-family:var(--mono);font-size:0.65rem;color:var(--muted2);margin-top:5px;" id="uptime-form-target-hint">Isi IP atau hostname, mis. 10.10.10.1</div>
           </div>
-          <div id="uptime-form-error" style="display:none;padding:8px 12px;background:rgba(255,77,106,0.1);border:1px solid rgba(255,77,106,0.3);border-radius:6px;font-family:var(--mono);font-size:0.72rem;color:var(--danger);"></div>
+          <div id="uptime-form-error" class="pve-modal-msg" style="background:rgba(251,113,133,.12);color:var(--danger);"></div>
         </div>
-        <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
+        <div style="display:flex;gap:10px;margin-top:22px;justify-content:flex-end;">
           <button class="btn btn-ghost" onclick="closeUptimeAddModal()">Batal</button>
           <button class="btn btn-primary" onclick="submitUptimeAdd()">Simpan</button>
         </div>
@@ -4946,8 +4949,23 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // ─── VERSI APP & CHANGELOG ───
   // Tambah rilis baru di PALING ATAS array, lalu ubah APP_VERSION. Tipe: new | imp | fix
-  const APP_VERSION = '1.8.1';
+  const APP_VERSION = '1.9.1';
   const APP_CHANGELOG = [
+    { v: '1.9.1', date: '3 Nov 2026', items: [
+      ['fix', 'Label skala latency pada grafik Ping Monitor tidak lagi terpotong, melebar, atau tertimpa garis grafik (ditaruh di kolom sendiri di kiri).'],
+    ] },
+    { v: '1.9.0', date: '3 Nov 2026', items: [
+      ['imp', 'Ping Monitor didesain ulang: kartu ringkasan, filter Device/Website dengan pencarian, tampilan kartu grid yang lebih rapi, dan indikator status berwarna.'],
+      ['new', 'Filter "Hanya bermasalah" dan rata-rata latency di Ping Monitor.'],
+      ['imp', 'Form tambah monitor memakai pilihan kartu; konfirmasi hapus memakai popup modern.'],
+    ] },
+    { v: '1.8.3', date: '3 Nov 2026', items: [
+      ['imp', 'Tombol "Isi Form" dihapus dari riwayat aktivasi (kartu riwayat dan popup Detail).'],
+    ] },
+    { v: '1.8.2', date: '1 Nov 2026', items: [
+      ['fix', 'Riwayat aktivasi: entri baru langsung tampil dan tidak ikut hilang kalau pemuatan ulang daftar gagal; kegagalan menyimpan kini memunculkan peringatan.'],
+      ['imp', 'Server mencatat setiap simpan/hapus riwayat di log ([HISTORY]) untuk memudahkan pelacakan.'],
+    ] },
     { v: '1.8.1', date: '31 Okt 2026', items: [
       ['fix', 'Tampilan HP: menu navigasi yang tertutup tombol versi kini muncul lagi (bisa digeser ke samping), lengkap dengan nama menu; tombol versi dibuat ringkas.'],
     ] },
@@ -5432,48 +5450,63 @@ document.addEventListener('DOMContentLoaded', function() {
     if (uptimePollTimer) { clearInterval(uptimePollTimer); uptimePollTimer = null; }
   }
 
-  async function loadUptimeMonitors() {
+  let uptimeKind = 'all';
+  async function loadUptimeMonitors(manual) {
     try {
       const res = await fetch('/api/uptime/monitors');
       if (!res.ok) throw new Error('gagal ambil data');
       uptimeMonitors = await res.json();
+      const u = document.getElementById('up-updated');
+      if (u) u.textContent = 'Update ' + new Date().toLocaleTimeString('id-ID');
       renderUptimeList();
+      if (manual === true) showToast('ok', 'Diperbarui', uptimeMonitors.length + ' monitor');
     } catch (e) {
       const listEl = document.getElementById('uptime-list');
+      if (manual === true) showToast('fail', 'Gagal memuat monitor', 'Pastikan endpoint /api/uptime aktif di server');
       if (listEl && !uptimeMonitors.length) {
-        listEl.innerHTML = `<div style="text-align:center;padding:30px;font-family:var(--mono);font-size:0.75rem;color:var(--muted2);">Gagal memuat data monitor. Pastikan endpoint /api/uptime sudah aktif di backend.</div>`;
+        listEl.innerHTML = `<div class="pve-empty" style="grid-column:1/-1;">Gagal memuat data monitor. Pastikan endpoint /api/uptime sudah aktif di backend.</div>`;
       }
     }
+  }
+
+  function uptimeSetKind(k) {
+    uptimeKind = k;
+    document.querySelectorAll('#up-tabs button').forEach(b => b.classList.toggle('active', b.dataset.k === k));
+    renderUptimeList();
+  }
+  // 'pending' = belum pernah dicek, 'up', 'down'
+  function uptimeState(m) {
+    if (!m.lastCheck) return 'pending';
+    return (m.lastResult && m.lastResult.up) ? 'up' : 'down';
   }
 
   function renderUptimeList() {
     const listEl = document.getElementById('uptime-list');
     const emptyEl = document.getElementById('uptime-empty');
-    const filterSel = document.getElementById('uptime-filter-category');
-    const filterVal = filterSel ? filterSel.value : 'all';
-    const filtered = filterVal === 'all' ? uptimeMonitors : uptimeMonitors.filter(m => m.category === filterVal);
+    if (!listEl) return;
+    const q = ((document.getElementById('up-q') || {}).value || '').trim().toLowerCase();
+    const onlyDown = !!(document.getElementById('up-only-down') || {}).checked;
 
-    updateUptimeSummary(filtered);
+    updateUptimeSummary(uptimeMonitors);
+
+    const filtered = uptimeMonitors.filter(m =>
+      (uptimeKind === 'all' || m.category === uptimeKind) &&
+      (!onlyDown || uptimeState(m) === 'down') &&
+      (!q || String(m.name).toLowerCase().includes(q) || String(m.target).toLowerCase().includes(q)));
 
     if (!filtered.length) {
       emptyEl.style.display = 'block';
-      emptyEl.textContent = uptimeMonitors.length
-        ? 'Tidak ada monitor pada kategori ini.'
-        : 'Belum ada monitor. Klik "+ Tambah Monitor" untuk mulai memantau perangkat/layanan.';
+      emptyEl.innerHTML = !uptimeMonitors.length
+        ? 'Belum ada monitor. Klik <b>+ MONITOR</b> untuk mulai memantau perangkat atau layanan.'
+        : (onlyDown && !q && uptimeKind === 'all' ? 'Tidak ada monitor yang bermasalah. Semua normal.' : 'Tidak ada monitor yang cocok.');
       listEl.innerHTML = '';
       return;
     }
     emptyEl.style.display = 'none';
 
     // Monitor yang RTO/DOWN dikelompokkan & ditaruh paling atas, biar langsung kelihatan tanpa scroll/nyari.
-    const downList = [];
-    const restList = [];
-    filtered.forEach(m => {
-      const checked = !!m.lastCheck;
-      const up = checked ? !!(m.lastResult && m.lastResult.up) : null;
-      (checked && !up ? downList : restList).push(m);
-    });
-
+    const downList = filtered.filter(m => uptimeState(m) === 'down');
+    const restList = filtered.filter(m => uptimeState(m) !== 'down');
     let html = '';
     if (downList.length) {
       html += `<div class="uc-group-title down"><span class="uc-group-dot"></span>SEDANG RTO / DOWN — ${downList.length} monitor</div>`;
@@ -5486,20 +5519,28 @@ document.addEventListener('DOMContentLoaded', function() {
     listEl.innerHTML = html;
   }
 
-  // Ringkasan Total/UP/RTO-DOWN mengikuti hasil filter dropdown yang sedang aktif.
+  // Kartu ringkasan di atas (selalu menghitung semua monitor, tidak terpengaruh filter).
   function updateUptimeSummary(list) {
-    let up = 0, down = 0;
-    list.forEach(m => {
-      const checked = !!m.lastCheck;
-      if (!checked) return;
-      if (m.lastResult && m.lastResult.up) up++; else down++;
-    });
-    const totalEl = document.getElementById('up-sum-total');
-    const upEl = document.getElementById('up-sum-up');
-    const downEl = document.getElementById('up-sum-down');
-    if (totalEl) totalEl.textContent = list.length;
-    if (upEl) upEl.textContent = up;
-    if (downEl) downEl.textContent = down;
+    const el = document.getElementById('up-stats');
+    if (!el) return;
+    const up = list.filter(m => uptimeState(m) === 'up');
+    const down = list.filter(m => uptimeState(m) === 'down');
+    const pending = list.length - up.length - down.length;
+    const lat = up.filter(m => m.checkType === 'ping' && m.lastResult && m.lastResult.latencyMs != null);
+    const avg = lat.length ? lat.reduce((s, m) => s + m.lastResult.latencyMs, 0) / lat.length : null;
+    const slow = lat.slice().sort((a, b) => b.lastResult.latencyMs - a.lastResult.latencyMs)[0];
+    const I = d => `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+    const stat = (cls, ico, label, val, sub) => `<div class="pve-stat"><div class="pve-stat-icon ${cls}">${ico}</div><div style="min-width:0"><div class="pve-stat-label">${label}</div><div class="pve-stat-val">${val}</div><div class="pve-stat-sub">${sub}</div></div></div>`;
+    el.innerHTML =
+      stat('', I('<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>'), 'Total monitor', list.length,
+        `${list.filter(m => m.category === 'internal').length} device · ${list.filter(m => m.category === 'external').length} website`) +
+      stat('ok', I('<polyline points="20 6 9 17 4 12"/>'), 'UP', up.length,
+        list.length ? (down.length ? 'sisanya bermasalah' : (pending ? pending + ' menunggu cek' : 'semua normal')) : '—') +
+      stat(down.length ? 'danger' : 'ok', I('<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>'), 'RTO / DOWN', down.length,
+        down.length ? down.map(m => escHtml(m.name)).slice(0, 2).join(', ') + (down.length > 2 ? ` +${down.length - 2}` : '') : 'tidak ada') +
+      stat(avg != null && avg >= 150 ? 'warn' : '', I('<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'), 'Rata-rata latency', avg != null ? Math.round(avg) + ' ms' : '—',
+        slow ? 'tertinggi: ' + escHtml(slow.name) + ' · ' + Math.round(slow.lastResult.latencyMs) + ' ms' : 'belum ada data ping');
+    // lencana di sidebar tidak ada untuk halaman ini, jadi cukup kartu di atas
   }
 
   // Buka/tutup panel riwayat RTO di dalam kartu monitor, tanpa perlu reload data dari server.
@@ -5572,105 +5613,71 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function renderUptimeCard(m) {
     const last = m.lastResult || {};
-    const checked = !!m.lastCheck;
-    const isUp = checked ? !!last.up : null; // null = belum pernah dicek (pending)
-    const isDown = checked && !isUp;
-    const downWord = m.checkType === 'ping' ? 'RTO' : 'DOWN'; // RTO = istilah timeout ping, DOWN untuk HTTP check
+    const state = uptimeState(m);
+    const isDown = state === 'down';
+    const isPing = m.checkType === 'ping';
+    const downWord = isPing ? 'RTO' : 'DOWN'; // RTO = istilah timeout ping, DOWN untuk HTTP check
     const history = m.history || [];
-    const barSegs = history.slice(-40).map(h => `<div class="uc-bar-seg ${h.up ? 'up' : 'down'}" title="${new Date(h.t).toLocaleTimeString('id-ID')} — ${h.up ? 'UP' : (m.checkType === 'ping' ? 'RTO' : 'DOWN')}"></div>`).join('');
-    const emptySegs = history.length < 40 ? Array.from({ length: 40 - history.length }).map(() => `<div class="uc-bar-seg"></div>`).join('') : '';
+    const SEG = 48;
+    const barSegs = history.slice(-SEG).map(x => `<i class="${x.up ? 'up' : 'down'}" title="${new Date(x.t).toLocaleTimeString('id-ID')} — ${x.up ? 'UP' : downWord}"></i>`).join('');
+    const emptySegs = history.length < SEG ? '<i></i>'.repeat(SEG - history.length) : '';
 
-    let statusLabel, statusClass;
-    if (isUp === null) { statusLabel = 'PENDING'; statusClass = 'na'; }
-    else if (isUp) { statusLabel = '● UP'; statusClass = 'up'; }
-    else { statusLabel = '● ' + downWord; statusClass = 'down'; }
+    const pillClass = state === 'pending' ? 'na' : state;
+    const pillText = state === 'pending' ? 'MENUNGGU' : state === 'up' ? 'UP' : downWord;
+    const kpi = (label, val, cls) => `<div class="up-kpi"><span>${label}</span><b class="${cls || ''}">${val}</b></div>`;
 
-    let statsHtml = '';
-    if (m.checkType === 'ping') {
-      const latency = last.latencyMs != null ? Math.round(last.latencyMs) + ' ms' : '—';
-      const loss = last.packetLoss != null ? last.packetLoss + '%' : '—';
-      const lossWarn = last.packetLoss > 0 && last.packetLoss < 100;
-      statsHtml = `
-        <div>
-          <div class="uc-stat-label">STATUS</div>
-          <span class="uc-pill ${statusClass}">${statusLabel}</span>
-        </div>
-        <div>
-          <div class="uc-stat-label">LATENCY</div>
-          <div class="uc-stat-val">${escHtml(latency)}</div>
-        </div>
-        <div>
-          <div class="uc-stat-label">PACKET LOSS</div>
-          <span class="uc-pill ${lossWarn ? 'warn' : statusClass}">${escHtml(loss)}</span>
-        </div>
-        <div>
-          <div class="uc-stat-label">UPTIME</div>
-          <div class="uc-stat-val">${m.uptimePct != null ? m.uptimePct + '%' : '—'}</div>
-        </div>
-      `;
+    let kpis = '', graph = '';
+    const upPct = m.uptimePct != null ? m.uptimePct + '%' : '—';
+    if (isPing) {
+      const lat = last.latencyMs != null ? Math.round(last.latencyMs) : null;
+      const loss = last.packetLoss != null ? last.packetLoss : null;
+      kpis =
+        kpi('Latency', lat != null ? lat + ' ms' : '—', lat != null && lat >= 150 ? 'warn' : '') +
+        kpi('Packet loss', loss != null ? loss + '%' : '—', loss > 0 ? (loss >= 100 ? 'err' : 'warn') : '') +
+        kpi('Uptime', upPct, m.uptimePct != null && m.uptimePct < 99 ? 'warn' : '');
       const graphRange = getUptimeGraphRange(m.id);
-      statsHtml += `<div style="grid-column:1/-1;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;">
-          <div class="uc-stat-label" style="margin-bottom:0;">LATENCY &amp; PACKET LOSS</div>
-          <select onchange="setUptimeGraphRange('${escAttr(m.id)}', this.value)" style="font-family:var(--mono);font-size:0.6rem;padding:2px 20px 2px 6px;height:auto;width:auto;border-radius:5px;">
+      graph = `<div class="up-graph">
+        <div class="up-graph-head">
+          <span>Latency &amp; packet loss</span>
+          <select onchange="setUptimeGraphRange('${escAttr(m.id)}', this.value)">
             ${UPTIME_GRAPH_RANGES.map(r => `<option value="${r}" ${r === graphRange ? 'selected' : ''}>${r} check terakhir</option>`).join('')}
           </select>
         </div>
         ${renderSmokepingGraph(history, downWord, graphRange)}
       </div>`;
     } else {
-      const sslInfo = last.ssl;
-      const sslLabel = sslInfo ? (sslInfo.valid ? `VALID` : 'EXPIRED') : (m.target.startsWith('https') ? 'N/A' : '—');
-      const sslPillClass = sslInfo ? (sslInfo.valid ? 'up' : 'down') : 'na';
-      const sslExpiry = sslInfo ? `${sslInfo.daysLeft} hari lagi` : '—';
-      statsHtml = `
-        <div>
-          <div class="uc-stat-label">STATUS</div>
-          <span class="uc-pill ${statusClass}">${statusLabel}</span>
-        </div>
-        <div>
-          <div class="uc-stat-label">SSL</div>
-          <span class="uc-pill ${sslPillClass}">${escHtml(sslLabel)}</span>
-        </div>
-        <div>
-          <div class="uc-stat-label">SSL EXPIRY</div>
-          <div class="uc-stat-val">${escHtml(sslExpiry)}</div>
-        </div>
-        <div>
-          <div class="uc-stat-label">STATUS CODE</div>
-          <div class="uc-stat-val">${last.statusCode || '—'}</div>
-        </div>
-        <div>
-          <div class="uc-stat-label">UPTIME</div>
-          <div class="uc-stat-val">${m.uptimePct != null ? m.uptimePct + '%' : '—'}</div>
-        </div>
-      `;
+      const ssl = last.ssl;
+      const isHttps = String(m.target).startsWith('https');
+      kpis =
+        kpi('Kode status', last.statusCode || '—', last.statusCode && last.statusCode >= 400 ? 'err' : '') +
+        kpi('SSL', ssl ? (ssl.valid ? 'VALID' : 'EXPIRED') : (isHttps ? 'N/A' : '—'), ssl ? (ssl.valid ? 'ok' : 'err') : '') +
+        kpi('Masa SSL', ssl ? ssl.daysLeft + ' hari' : '—', ssl && ssl.daysLeft != null && ssl.daysLeft < 14 ? 'warn' : '') +
+        kpi('Uptime', upPct, m.uptimePct != null && m.uptimePct < 99 ? 'warn' : '');
     }
 
-    const rtoBadge = isDown ? `<span class="uc-rto-badge"><span class="dot"></span>${downWord}</span>` : '';
     const catLabel = m.category === 'internal' ? 'DEVICE' : 'WEBSITE';
+    const delIco = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>';
 
     return `
-      <div class="uc-card${isDown ? ' is-down' : ''}">
-        <div class="uc-head">
-          <span class="uc-cat ${m.category}">${catLabel}</span>
-          <span>${m.checkType === 'ping' ? 'ICMP PING' : 'HTTP CHECK'}</span>
-          ${rtoBadge}
-          <span class="uc-meta">
-            <span>Interval: 1 menit</span>
-            <span>Cek terakhir: ${m.lastCheck ? timeAgo(m.lastCheck) : '—'}</span>
-          </span>
-          <svg class="uc-del" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" onclick="deleteUptimeMonitor('${escAttr(m.id)}','${escAttr(m.name)}')"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
-        </div>
-        <div class="uc-body">
-          <div class="uc-title-row">
-            <span class="uc-name">${escHtml(m.name)}</span>
-            <span class="uc-target">${escHtml(m.target)}</span>
+      <div class="pve-card up-card ${state}">
+        <div class="up-top">
+          <span class="up-led ${state}"></span>
+          <div class="up-id">
+            <div class="up-name" title="${escAttr(m.name)}">${escHtml(m.name)}</div>
+            <div class="up-target" title="${escAttr(m.target)}">${escHtml(m.target)}</div>
           </div>
-          <div class="uc-bar">${barSegs}${emptySegs}</div>
-          <div class="uc-stats">${statsHtml}</div>
-          ${renderUptimeHistoryPanel(m, downWord)}
+          <span class="uc-pill ${pillClass}">${pillText}</span>
+          <button class="up-del" title="Hapus monitor" onclick="deleteUptimeMonitor('${escAttr(m.id)}','${escAttr(m.name)}')">${delIco}</button>
         </div>
+        <div class="up-tags">
+          <span class="up-tag ${m.category}">${catLabel}</span>
+          <span class="up-tag">${isPing ? 'ICMP PING' : 'HTTP CHECK'}</span>
+          <span class="up-tag soft">cek ${m.lastCheck ? timeAgo(m.lastCheck) : 'belum ada'}</span>
+        </div>
+        <div class="up-bar" title="${SEG} pengecekan terakhir (kiri = lama, kanan = terbaru)">${emptySegs}${barSegs}</div>
+        <div class="up-kpis">${kpis}</div>
+        ${graph}
+        ${renderUptimeHistoryPanel(m, downWord)}
       </div>
     `;
   }
@@ -5739,23 +5746,30 @@ document.addEventListener('DOMContentLoaded', function() {
     }).join('');
 
     // ── Gridline referensi skala latency ──
+    // Garis digambar di SVG; label angka dibuat HTML di atasnya, karena teks SVG ikut melar
+    // (preserveAspectRatio="none") dan label teratas terpotong di tepi grafik.
     const gridLines = [0.25, 0.5, 0.75, 1].map(f => {
       const y = padTop + plotH * (1 - f);
-      const label = Math.round(maxLat * f);
-      return `<line x1="0" y1="${y.toFixed(2)}" x2="${w}" y2="${y.toFixed(2)}" stroke="var(--border)" stroke-width="0.6" stroke-dasharray="2,3"/>
-        <text x="2" y="${(y - 2).toFixed(2)}" font-family="var(--mono)" font-size="8" fill="var(--muted2)">${label}ms</text>`;
+      return `<line x1="0" y1="${y.toFixed(2)}" x2="${w}" y2="${y.toFixed(2)}" stroke="var(--border)" stroke-width="0.6" stroke-dasharray="2,3" vector-effect="non-scaling-stroke"/>`;
+    }).join('');
+    const gridLabels = [0.25, 0.5, 0.75, 1].map(f => {
+      const y = padTop + plotH * (1 - f);
+      return `<span class="up-gl" style="top:${(y / h * 100).toFixed(2)}%">${Math.round(maxLat * f)} ms</span>`;
     }).join('');
 
     const firstTime = new Date(pts[0].t).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
     const lastTime = new Date(pts[pts.length - 1].t).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
     return `
-      <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:${h}px;display:block;background:var(--surface2);border-radius:4px;">
-        ${gridLines}
-        ${bg}
-        ${lineSvg}
-      </svg>
-      <div style="display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:0.6rem;color:var(--muted2);margin-top:3px;">
+      <div class="up-plot" style="height:${h}px;">
+        <div class="up-axis">${gridLabels}</div>
+        <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="flex:1;min-width:0;height:${h}px;display:block;background:var(--surface2);border-radius:4px;">
+          ${gridLines}
+          ${bg}
+          ${lineSvg}
+        </svg>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:0.6rem;color:var(--muted2);margin-top:3px;padding-left:52px;">
         <span>${firstTime}</span>
         <span style="display:flex;gap:8px;flex-wrap:wrap;">
           <span><span style="display:inline-block;width:9px;height:9px;border-radius:1px;background:rgba(250,204,21,0.55);margin-right:3px;"></span>1-19%</span>
@@ -5782,15 +5796,23 @@ document.addEventListener('DOMContentLoaded', function() {
   function openUptimeAddModal() {
     document.getElementById('uptime-form-name').value = '';
     document.getElementById('uptime-form-target').value = '';
-    document.getElementById('uptime-form-category').value = 'internal';
-    document.getElementById('uptime-form-type').value = 'ping';
+    uptimePick('cat', 'internal');
+    uptimePick('type', 'ping');
     document.getElementById('uptime-form-error').style.display = 'none';
-    uptimeToggleTargetHint();
-    document.getElementById('uptime-add-modal').style.display = 'flex';
+    document.getElementById('uptime-add-modal').classList.add('show');
+    setTimeout(() => { const n = document.getElementById('uptime-form-name'); if (n) n.focus(); }, 50);
   }
 
   function closeUptimeAddModal() {
-    document.getElementById('uptime-add-modal').style.display = 'none';
+    document.getElementById('uptime-add-modal').classList.remove('show');
+  }
+
+  // Pilihan kategori / tipe cek (kartu pilihan, menggantikan dropdown)
+  function uptimePick(which, val) {
+    const box = document.getElementById(which === 'cat' ? 'up-choice-cat' : 'up-choice-type');
+    box.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.v === val));
+    document.getElementById(which === 'cat' ? 'uptime-form-category' : 'uptime-form-type').value = val;
+    if (which === 'type') uptimeToggleTargetHint();
   }
 
   function uptimeToggleTargetHint() {
@@ -5798,10 +5820,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const hint = document.getElementById('uptime-form-target-hint');
     const target = document.getElementById('uptime-form-target');
     if (type === 'ping') {
-      hint.textContent = '* Isi IP atau hostname, mis. 10.10.10.1 atau router-core.isp.local';
+      hint.textContent = 'Isi IP atau hostname, mis. 10.10.10.1 atau router-core.isp.local';
       target.placeholder = 'mis. 10.10.10.1';
     } else {
-      hint.textContent = '* Isi URL lengkap dengan http:// atau https://, mis. https://cloud.google.com';
+      hint.textContent = 'Isi URL lengkap dengan http:// atau https://, mis. https://cloud.google.com';
       target.placeholder = 'mis. https://cloud.google.com';
     }
   }
@@ -5813,17 +5835,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const target = document.getElementById('uptime-form-target').value.trim();
     const errEl = document.getElementById('uptime-form-error');
     errEl.style.display = 'none';
+    const fail = msg => { errEl.textContent = msg; errEl.style.display = 'block'; };
 
-    if (!name || !target) {
-      errEl.textContent = 'Nama dan target wajib diisi.';
-      errEl.style.display = 'block';
-      return;
-    }
-    if (checkType === 'http' && !/^https?:\/\//i.test(target)) {
-      errEl.textContent = 'Untuk tipe HTTP/HTTPS, target harus diawali http:// atau https://';
-      errEl.style.display = 'block';
-      return;
-    }
+    if (!name || !target) return fail('Nama dan target wajib diisi.');
+    if (checkType === 'http' && !/^https?:\/\//i.test(target)) return fail('Untuk tipe HTTP/HTTPS, target harus diawali http:// atau https://');
 
     try {
       const res = await fetch('/api/uptime/monitors', {
@@ -5836,20 +5851,24 @@ document.addEventListener('DOMContentLoaded', function() {
         throw new Error(data.error || 'Gagal menyimpan monitor');
       }
       closeUptimeAddModal();
+      showToast('ok', 'Monitor ditambahkan', name);
       loadUptimeMonitors();
     } catch (e) {
-      errEl.textContent = e.message;
-      errEl.style.display = 'block';
+      fail(e.message);
     }
   }
 
   async function deleteUptimeMonitor(id, name) {
-    if (!confirm(`Hapus monitor "${name}"?`)) return;
+    const ok = await showConfirm({ title: 'Hapus Monitor?', body: 'Monitor dan seluruh riwayat pengecekannya akan dihapus permanen:', target: name, confirmLabel: 'Ya, Hapus', showWarn: true });
+    if (!ok) return;
     try {
-      await fetch(`/api/uptime/monitors/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const r = await fetch(`/api/uptime/monitors/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      uptimeExpandedIds.delete(id);
+      showToast('ok', 'Monitor dihapus', name);
       loadUptimeMonitors();
     } catch (e) {
-      alert('Gagal menghapus monitor.');
+      showToast('fail', 'Gagal menghapus monitor', e.message);
     }
   }
 
@@ -7951,27 +7970,40 @@ document.addEventListener('DOMContentLoaded', function() {
     try {
       const res = await fetch('/api/history');
       const data = await res.json();
-      _historyCache = data.history || [];
+      // Gagal ambil (server sibuk/restart/error) -> pertahankan daftar yang sudah tampil, jangan dikosongkan
+      if (!res.ok || !Array.isArray(data.history)) throw new Error(data.message || ('HTTP ' + res.status));
+      _historyCache = data.history;
     } catch (e) {
       console.error('Gagal load history:', e);
-      _historyCache = [];
     }
     return _historyCache;
   }
 
   async function addHistory(entry) {
+    // tampilkan dulu di daftar supaya langsung terlihat, lalu sinkron ke server
+    _historyCache = [entry, ..._historyCache.filter(x => x.id !== entry.id)];
+    _historyPage = 1;
+    renderHistory();
+    let saved = false;
     try {
-      await fetch('/api/history', {
+      const r = await fetch('/api/history', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(entry),
       });
-      await loadHistory();
-      _historyPage = 1;
-      renderHistory();
+      const j = await r.json().catch(() => ({}));
+      saved = r.ok && j.success !== false;
+      if (!saved) throw new Error(j.message || ('HTTP ' + r.status));
     } catch (e) {
       console.error('Gagal simpan history:', e);
+      showToast('fail', 'History tidak tersimpan', 'Aktivasi sudah masuk ke OLT, tetapi riwayatnya gagal disimpan ke server: ' + e.message, 8000);
+      return; // entri sementara tetap tampil sampai halaman dimuat ulang
     }
+    await loadHistory();
+    // pastikan entri yang baru disimpan tidak hilang kalau daftar dari server belum memuatnya
+    if (!_historyCache.some(x => x.id === entry.id)) _historyCache = [entry, ..._historyCache];
+    _historyPage = 1;
+    renderHistory();
   }
 
   // ─── MODAL HELPERS ───
@@ -8180,10 +8212,6 @@ document.addEventListener('DOMContentLoaded', function() {
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
               Detail
             </button>
-            <button class="history-btn" onclick="fillFromHistory('${e.id}')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-              Isi Form
-            </button>
             <button class="history-btn danger" onclick="deleteHistoryEntry('${e.id}')">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
               Hapus
@@ -8225,25 +8253,6 @@ document.addEventListener('DOMContentLoaded', function() {
     renderHistory();
     // scroll ke atas history panel
     document.getElementById('term-body').scrollTop = 0;
-  }
-
-  function fillFromHistory(id) {
-    const entry = _historyCache.find(e => e.id === id);
-    if (!entry) return;
-    document.getElementById('sn').value = entry.sn || '';
-    document.getElementById('slot').value = entry.slot || '';
-    document.getElementById('port').value = entry.port || '';
-    document.getElementById('onu-id').value = entry.onuId || '';
-    document.getElementById('lokasi').value = entry.lokasi || '';
-    document.getElementById('nama').value = entry.namaPelanggan || '';
-    document.getElementById('pppoe').value = entry.idPppoe || '';
-    // set OLT select
-    const sel = document.getElementById('olt-select');
-    for (let opt of sel.options) { if (opt.value === entry.oltName) { sel.value = entry.oltName; break; } }
-    sel.dispatchEvent(new Event('change'));
-    switchTab('log');
-    appendLog('INFO', `Form diisi dari history: ${entry.namaPelanggan} - ${entry.sn}`);
-    document.querySelector('.form-panel').scrollTop = 0;
   }
 
   // ─── THEME TOGGLE ───
@@ -8446,11 +8455,6 @@ document.addEventListener('DOMContentLoaded', function() {
       ${rxBlock}
     `;
 
-    document.getElementById('detail-fill-btn').onclick = () => {
-      closeDetailModal();
-      fillFromHistory(id);
-    };
-
     const overlay = document.getElementById('detail-modal-overlay');
     overlay.classList.add('show');
     document.body.style.overflow = 'hidden';
@@ -8522,10 +8526,6 @@ document.addEventListener('DOMContentLoaded', function() {
     <div class="detail-modal-body" id="detail-modal-body"></div>
     <div class="detail-modal-footer">
       <button class="modal-btn modal-btn-cancel" onclick="closeDetailModal()">Tutup</button>
-      <button class="modal-btn" id="detail-fill-btn" style="background:var(--accent);color:var(--btn-primary-text);">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:14px;height:14px"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-        Isi Form
-      </button>
     </div>
   </div>
 </div>
@@ -11050,6 +11050,69 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closePppoeMo
   .nd-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:8px; background:var(--muted2); }
   .nd-dot.up { background:var(--ok); box-shadow:0 0 6px var(--ok); } .nd-dot.down { background:var(--danger); } .nd-dot.dis { background:var(--muted2); opacity:.5; }
   @media (max-width:700px) { .nd-body { padding:6px 12px 20px; } .nd-search input { min-width:0; width:100%; } .nd-search { flex:1; min-width:150px; } .nd-box { padding:22px; border-radius:22px; } .nd-box.wide { padding:0; } }
+</style>
+
+<style id="up-css">
+  /* ── Ping Monitor (modern) ── */
+  .up-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(380px,1fr)); gap:16px; align-items:start; }
+  .up-grid .uc-group-title { grid-column:1/-1; margin:8px 2px 0; }
+  .up-grid .uc-group-title:first-child { margin-top:0; }
+  .up-card { display:flex; flex-direction:column; gap:13px; padding:18px 20px; min-width:0; }
+  .up-card.down { border-color:rgba(251,113,133,.55); background:linear-gradient(180deg,rgba(251,113,133,.07),transparent 55%), var(--surface); }
+  .up-top { display:flex; align-items:center; gap:12px; min-width:0; }
+  .up-led { width:12px; height:12px; border-radius:50%; flex:none; background:var(--muted2); opacity:.55; }
+  .up-led.up { background:var(--ok); opacity:1; box-shadow:0 0 0 4px rgba(52,211,153,.16), 0 0 10px var(--ok); }
+  .up-led.down { background:var(--danger); opacity:1; box-shadow:0 0 0 4px rgba(251,113,133,.18), 0 0 10px var(--danger); animation:blink .9s infinite; }
+  .up-id { min-width:0; flex:1; }
+  .up-name { font-weight:700; font-size:.95rem; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .up-card.down .up-name { color:var(--danger); }
+  .up-target { font-family:var(--mono); font-size:.68rem; color:var(--muted2); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .up-del { flex:none; width:32px; height:32px; border-radius:11px; border:1px solid transparent; background:transparent; color:var(--muted2); display:grid; place-items:center; cursor:pointer; opacity:.55; transition:all .15s; }
+  .up-card:hover .up-del { opacity:1; }
+  .up-del:hover { color:var(--danger); border-color:rgba(251,113,133,.4); background:rgba(251,113,133,.1); }
+  .up-tags { display:flex; flex-wrap:wrap; gap:6px; }
+  .up-tag { font-family:var(--mono); font-size:.58rem; font-weight:700; letter-spacing:.07em; padding:3px 10px; border-radius:999px; background:var(--surface2); border:1px solid var(--border); color:var(--muted2); }
+  .up-tag.internal { background:var(--accent-dim); border-color:transparent; color:var(--accent); }
+  .up-tag.external { background:rgba(77,184,255,.14); border-color:transparent; color:var(--info); }
+  .up-tag.soft { font-weight:500; letter-spacing:.02em; background:none; border-color:transparent; padding-left:2px; margin-left:auto; }
+  .up-bar { display:flex; gap:2px; height:26px; align-items:stretch; }
+  .up-bar i { flex:1; min-width:2px; border-radius:3px; background:var(--surface2); }
+  .up-bar i.up { background:var(--ok); opacity:.9; }
+  .up-bar i.down { background:var(--danger); }
+  .up-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(86px,1fr)); gap:8px; }
+  .up-kpi { background:var(--surface2); border:1px solid var(--border); border-radius:14px; padding:9px 12px; min-width:0; }
+  .up-kpi span { display:block; font-family:var(--mono); font-size:.55rem; letter-spacing:.09em; text-transform:uppercase; color:var(--muted2); }
+  .up-kpi b { display:block; margin-top:3px; font-family:var(--mono); font-size:.9rem; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .up-kpi b.ok { color:var(--ok); } .up-kpi b.warn { color:var(--warn); } .up-kpi b.err { color:var(--danger); }
+  .up-graph-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px; font-family:var(--mono); font-size:.58rem; letter-spacing:.09em; text-transform:uppercase; color:var(--muted2); }
+  .up-graph-head select { width:auto; height:auto; padding:3px 24px 3px 9px; font-family:var(--mono); font-size:.6rem; border-radius:9px; }
+  .up-graph svg { border-radius:12px !important; }
+  .up-plot { display:flex; gap:6px; }
+  .up-axis { position:relative; flex:none; width:46px; }
+  .up-gl { position:absolute; right:0; transform:translateY(-50%); font-family:var(--mono); font-size:.56rem; line-height:1; color:var(--muted2); white-space:nowrap; }
+  .up-card .uc-hist-toggle { margin-top:0; }
+  .up-seg-label { font-family:var(--mono); font-size:.62rem; letter-spacing:.08em; text-transform:uppercase; color:var(--muted2); margin-bottom:-6px; }
+  .up-choice { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .up-choice button { text-align:left; padding:11px 14px; border-radius:16px; border:1px solid var(--border2); background:var(--surface2); color:var(--muted); cursor:pointer; transition:all .15s; font-family:inherit; }
+  .up-choice button b { display:block; font-size:.8rem; color:var(--text); }
+  .up-choice button span { display:block; margin-top:2px; font-family:var(--mono); font-size:.6rem; color:var(--muted2); }
+  .up-choice button:hover { border-color:var(--accent); }
+  .up-choice button.active { border-color:var(--accent); background:var(--accent-dim); box-shadow:inset 0 0 0 1px var(--accent-glow); }
+  .up-choice button.active b { color:var(--accent); }
+  @media (max-width:700px) {
+    .up-grid { grid-template-columns:1fr; }
+    .up-card { padding:16px; }
+    .up-tag.soft { margin-left:0; }
+    #up-stats { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+    #up-stats .pve-stat { min-width:0; }
+    #up-stats .pve-stat { padding:12px 14px; gap:10px; border-radius:18px; }
+    #up-stats .pve-stat-icon { width:36px; height:36px; border-radius:12px; }
+    #up-stats .pve-stat-icon svg { width:18px; height:18px; }
+    #up-stats .pve-stat-val { font-size:1.15rem; }
+    #up-stats .pve-stat-sub { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .up-graph-head select { font-size:.6rem !important; padding:3px 22px 3px 8px !important; height:auto !important; min-height:0 !important; width:auto !important; flex:none; }
+    .up-kpis { grid-template-columns:repeat(auto-fit,minmax(78px,1fr)); }
+  }
 </style>
 
 <style id="tpl-css">
