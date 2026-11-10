@@ -36,7 +36,7 @@
 
 const https = require('https');
 const http = require('http');
-const { exec } = require('child_process');
+const { execFile } = require('child_process');
 const os = require('os');
 
 const HISTORY_LIMIT = 200;            // jumlah histori check yg disimpan per monitor
@@ -48,22 +48,34 @@ function genId() {
   return 'mon_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+// Host/IP yang aman dipakai sebagai argumen ping: hanya huruf, angka, titik, minus, titik dua (IPv6).
+// Wajib diawali huruf/angka (mencegah injeksi opsi seperti "-f") dan tanpa spasi/karakter shell.
+const HOST_RE = /^[A-Za-z0-9][A-Za-z0-9.\-:]{0,252}$/;
+const isValidHost = (h) => typeof h === 'string' && HOST_RE.test(h);
+
 // Ping ICMP pakai binary `ping` sistem (tanpa dependency npm tambahan).
+// Pakai execFile (tanpa shell) + argumen terpisah => aman dari command injection,
+// dan windowsHide => tidak ada jendela CMD yang berkedip di Windows.
 function icmpPing(host) {
   return new Promise((resolve) => {
+    if (!isValidHost(host)) return resolve({ up: false, latencyMs: null, packetLoss: 100, error: 'host tidak valid' });
     const isWin = os.platform() === 'win32';
-    const cmd = isWin
-      ? `ping -n 1 -w ${PING_TIMEOUT_S * 1000} ${host}`
-      : `ping -c 1 -W ${PING_TIMEOUT_S} ${host}`;
+    const args = isWin
+      ? ['-n', '1', '-w', String(PING_TIMEOUT_S * 1000), host]
+      : ['-c', '1', '-W', String(PING_TIMEOUT_S), host];
     const started = Date.now();
-    exec(cmd, { timeout: (PING_TIMEOUT_S + 2) * 1000 }, (err, stdout) => {
-      if (err) return resolve({ up: false, latencyMs: null, packetLoss: 100 });
+    execFile('ping', args, { timeout: (PING_TIMEOUT_S + 2) * 1000, windowsHide: true }, (err, stdout) => {
+      const out = String(stdout || '');
+      // Windows tetap exit 0 untuk "Destination host unreachable" dari gateway: wajib ada balasan (TTL=)
+      const replied = isWin ? /ttl[=:]/i.test(out) : !err;
+      if (!replied) return resolve({ up: false, latencyMs: null, packetLoss: 100 });
       let latencyMs = null;
-      const timeMatch = stdout.match(/time[=<]([\d.]+)\s*ms/i);
+      // Windows bisa menerjemahkan teks ("time" / "waktu") atau menulis "time<1ms"
+      const timeMatch = out.match(/(?:time|waktu)\s*[=<]\s*([\d.]+)\s*ms/i) || out.match(/[=<]\s*([\d.]+)\s*ms/i);
       if (timeMatch) latencyMs = parseFloat(timeMatch[1]);
       else latencyMs = Date.now() - started; // fallback kasar kalau parsing gagal
-      const lossMatch = stdout.match(/(\d+)%\s*(packet\s*)?loss/i);
-      const packetLoss = lossMatch ? parseInt(lossMatch[1], 10) : 0;
+      const lossMatch = out.match(/(\d+(?:\.\d+)?)%\s*(packet\s*)?(loss|hilang)/i);
+      const packetLoss = lossMatch ? Math.round(parseFloat(lossMatch[1])) : 0;
       resolve({ up: packetLoss < 100, latencyMs, packetLoss });
     });
   });
@@ -229,11 +241,19 @@ module.exports = function createUptimeMonitor(db, requireAuth) {
     if (schedulerStarted) return;
     schedulerStarted = true;
 
+    let ticking = false;
     async function tick() {
-      const monitors = db.prepare('SELECT * FROM uptime_monitors WHERE paused = 0').all().map(rowToMonitor);
-      for (const monitor of monitors) {
-        try { await runCheck(monitor); } catch (e) { console.error('[uptime] check error', monitor.name, e.message); }
-      }
+      if (ticking) return;               // siklus sebelumnya belum selesai
+      ticking = true;
+      try {
+        const monitors = db.prepare('SELECT * FROM uptime_monitors WHERE paused = 0').all().map(rowToMonitor);
+        const CONCURRENCY = 5;           // beberapa check sekaligus, supaya siklus tidak molor
+        for (let i = 0; i < monitors.length; i += CONCURRENCY) {
+          await Promise.all(monitors.slice(i, i + CONCURRENCY).map(async (monitor) => {
+            try { await runCheck(monitor); } catch (e) { console.error('[uptime] check error', monitor.name, e.message); }
+          }));
+        }
+      } finally { ticking = false; }
     }
 
     tick(); // jalankan sekali begitu server start
@@ -286,10 +306,13 @@ module.exports = function createUptimeMonitor(db, requireAuth) {
       if (!name || !target || !['ping', 'http'].includes(checkType)) {
         return res.status(400).json({ error: 'name, target, dan checkType (ping/http) wajib diisi' });
       }
+      if (checkType === 'ping' && !isValidHost(String(target).trim())) {
+        return res.status(400).json({ error: 'Target ping harus berupa IP atau hostname (huruf, angka, titik, minus), tanpa spasi atau karakter khusus' });
+      }
       const monitor = {
         id: genId(),
         name,
-        target,
+        target: String(target).trim(),
         checkType,
         category: category === 'internal' ? 'internal' : 'external',
         createdAt: Date.now(),
@@ -314,6 +337,9 @@ module.exports = function createUptimeMonitor(db, requireAuth) {
       const row = db.prepare('SELECT * FROM uptime_monitors WHERE id = ?').get(req.params.id);
       if (!row) return res.status(404).json({ error: 'not found' });
       const { name, target, paused } = req.body || {};
+      if (target !== undefined && row.check_type === 'ping' && !isValidHost(String(target).trim())) {
+        return res.status(400).json({ error: 'Target ping harus berupa IP atau hostname yang valid' });
+      }
       db.prepare(`
         UPDATE uptime_monitors SET
           name = COALESCE(@name, name),
@@ -323,7 +349,7 @@ module.exports = function createUptimeMonitor(db, requireAuth) {
       `).run({
         id: req.params.id,
         name: name !== undefined ? name : null,
-        target: target !== undefined ? target : null,
+        target: target !== undefined ? String(target).trim() : null,
         paused: paused !== undefined ? (paused ? 1 : 0) : null,
       });
       const updated = db.prepare('SELECT * FROM uptime_monitors WHERE id = ?').get(req.params.id);

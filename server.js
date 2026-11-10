@@ -35,6 +35,7 @@ const express = require('express');
 const { Telnet } = require('telnet-client');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 const Database = require('better-sqlite3');
 const snmp = require('net-snmp');
 const crypto = require('crypto');
@@ -65,8 +66,33 @@ function requireAuth(req, res, next) {
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --- SQLITE SETUP ---
-const db = new Database(path.join(__dirname, 'history.db'));
-console.log('[DB] ' + path.join(__dirname, 'history.db'));
+// Lokasi database. Default: history.db di folder aplikasi. Supaya riwayat TIDAK ikut tertimpa saat
+// update/deploy (salin folder, git pull/checkout, unggah ulang zip), simpan di luar folder aplikasi,
+// mis. di VPS:  DB_PATH=/var/lib/nocs/history.db  (set di ecosystem.config.js / env pm2).
+const DB_FILE = process.env.DB_PATH ? path.resolve(process.env.DB_PATH) : path.join(__dirname, 'history.db');
+try { fs.mkdirSync(path.dirname(DB_FILE), { recursive: true }); } catch (e) {}
+const db = new Database(DB_FILE);
+console.log('[DB] ' + DB_FILE + (process.env.DB_PATH ? ' (dari DB_PATH)' : ' (default: di folder aplikasi)'));
+
+// Cadangan harian otomatis (7 hari terakhir) di sebelah file database: history.db.bak-YYYYMMDD
+(function dbDailyBackup() {
+  const keep = 7;
+  async function run() {
+    try {
+      const d = new Date(), pad = n => String(n).padStart(2, '0');
+      const dest = `${DB_FILE}.bak-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+      if (!fs.existsSync(dest)) {
+        await db.backup(dest);
+        console.log('[DB] cadangan harian dibuat: ' + dest);
+      }
+      const dir = path.dirname(DB_FILE), base = path.basename(DB_FILE) + '.bak-';
+      fs.readdirSync(dir).filter(f => f.startsWith(base)).sort().slice(0, -keep)
+        .forEach(f => { try { fs.unlinkSync(path.join(dir, f)); } catch (e) {} });
+    } catch (e) { console.error('[DB] cadangan gagal:', e.message); }
+  }
+  setTimeout(run, 20000);
+  setInterval(run, 6 * 3600 * 1000);
+})();
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS history (
@@ -632,15 +658,18 @@ app.post('/api/history', requireAuth, (req, res) => {
       rxPower: rxPower || null,
     });
 
-    // Trim jika melebihi MAX_HISTORY (hapus yang paling lama)
+    // Trim jika melebihi MAX_HISTORY (hapus yang paling lama). Entri yang baru saja disimpan
+    // tidak pernah ikut terhapus, walau created_at-nya kembar dengan entri lain.
     const count = db.prepare('SELECT COUNT(*) as c FROM history').get().c;
     if (count > MAX_HISTORY) {
-      db.prepare(`
+      const r = db.prepare(`
         DELETE FROM history WHERE id IN (
-          SELECT id FROM history ORDER BY created_at ASC LIMIT ?
+          SELECT id FROM history WHERE id != ? ORDER BY created_at ASC, rowid ASC LIMIT ?
         )
-      `).run(count - MAX_HISTORY);
+      `).run(String(id), count - MAX_HISTORY);
+      console.log(`[HISTORY] trim: ${r.changes} entri lama dihapus (batas ${MAX_HISTORY})`);
     }
+    console.log(`[HISTORY] simpan ${id} sn=${sn} olt=${oltName} (total ${Math.min(count, MAX_HISTORY)})`);
 
     res.json({ success: true });
   } catch (err) {
@@ -651,7 +680,8 @@ app.post('/api/history', requireAuth, (req, res) => {
 // --- API: DELETE ONE HISTORY ---
 app.delete('/api/history/:id', requireAuth, (req, res) => {
   try {
-    db.prepare('DELETE FROM history WHERE id = ?').run(req.params.id);
+    const r = db.prepare('DELETE FROM history WHERE id = ?').run(req.params.id);
+    console.log(`[HISTORY] hapus manual ${req.params.id} oleh ${req.user && req.user.username} (${r.changes} baris)`);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -661,7 +691,8 @@ app.delete('/api/history/:id', requireAuth, (req, res) => {
 // --- API: CLEAR ALL HISTORY ---
 app.delete('/api/history', requireAuth, (req, res) => {
   try {
-    db.prepare('DELETE FROM history').run();
+    const r = db.prepare('DELETE FROM history').run();
+    console.log(`[HISTORY] HAPUS SEMUA oleh ${req.user && req.user.username} (${r.changes} baris)`);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

@@ -20,6 +20,7 @@
         window.__nocsUser = data.user;
         const roleEl = document.getElementById('nocsRole');
         if (roleEl) roleEl.textContent = data.user.role || 'operator';
+        if (window.__nocsApplyRole) window.__nocsApplyRole();
       }
     })
     .catch(() => { /* offline, lanjutkan pakai data lama di localStorage */ });
@@ -2202,7 +2203,7 @@
     .logo-company { font-size: 0.6rem; }
     #logo-img { height: 30px; }
     .status-pill span:last-child { display: none; }
-    .theme-btn span#theme-label { display: none; }
+    .theme-btn span#theme-label, .topbar-admin-link span { display: none; }
     .topbar-right { gap: 8px; }
     /* Tombol logout topbar hanya muncul di mobile */
     #topbar-logout-btn { display: flex !important; }
@@ -2885,6 +2886,11 @@ async function nocsLogout() {
   localStorage.removeItem('nocs_user');
   window.location.href = '/login.html';
 }
+// Tombol ke halaman Admin: hanya terlihat untuk role admin
+window.__nocsApplyRole = function () {
+  var el = document.getElementById('topbar-admin-link');
+  if (el) el.style.display = ((window.__nocsUser || {}).role === 'admin') ? '' : 'none';
+};
 document.addEventListener('DOMContentLoaded', function() {
   const user = window.__nocsUser || {};
   if (user.username) {
@@ -2894,6 +2900,7 @@ document.addEventListener('DOMContentLoaded', function() {
     var tlb = document.getElementById('topbar-logout-btn');
     if (tlb) tlb.style.display = 'flex';
 
+    window.__nocsApplyRole();
     var topbarUsernameEl = document.getElementById('topbar-username');
     if (topbarUsernameEl) topbarUsernameEl.textContent = user.username;
   }
@@ -3068,6 +3075,10 @@ document.addEventListener('DOMContentLoaded', function() {
         <div class="notif-dd-footer" onclick="goToMonitorFromNotif()">LIHAT MONITOR ONU</div>
       </div>
     </div>
+    <a class="theme-btn topbar-admin-link" id="topbar-admin-link" href="/admin.html" title="Buka halaman Admin" style="display:none;text-decoration:none;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9.5 12.5l1.8 1.8 3.4-3.6"/></svg>
+      <span>ADMIN</span>
+    </a>
     <button class="theme-btn" id="theme-btn" onclick="toggleTheme()">
       <svg id="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
       <svg id="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="display:none"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
@@ -4949,8 +4960,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // ─── VERSI APP & CHANGELOG ───
   // Tambah rilis baru di PALING ATAS array, lalu ubah APP_VERSION. Tipe: new | imp | fix
-  const APP_VERSION = '1.9.1';
+  const APP_VERSION = '1.9.3';
   const APP_CHANGELOG = [
+    { v: '1.9.3', date: '10 Nov 2026', items: [
+      ['new', 'Lokasi database bisa dipindah ke luar folder aplikasi (env DB_PATH) supaya riwayat aktivasi tidak tertimpa saat update.'],
+      ['new', 'Cadangan database otomatis harian (7 hari terakhir).'],
+    ] },
+    { v: '1.9.2', date: '10 Nov 2026', items: [
+      ['new', 'Tombol ADMIN di topbar (khusus role admin) untuk membuka halaman Admin.'],
+      ['imp', 'Halaman Admin didesain ulang agar selaras dengan tampilan halaman utama.'],
+    ] },
     { v: '1.9.1', date: '3 Nov 2026', items: [
       ['fix', 'Label skala latency pada grafik Ping Monitor tidak lagi terpotong, melebar, atau tertimpa garis grafik (ditaruh di kolom sendiri di kiri).'],
     ] },

@@ -74,9 +74,17 @@ const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
 function ping(host) {
   return new Promise(resolve => {
     if (!/^[A-Za-z0-9][A-Za-z0-9.\-:]*$/.test(host)) return resolve(null);
-    execFile('ping', ['-c', '1', '-W', '2', host], { timeout: 4000 }, (err, out) => {
-      const m = /time[=<]([\d.]+)\s*ms/.exec(String(out || ''));
-      resolve(m ? parseFloat(m[1]) : null);
+    const win = process.platform === 'win32';
+    // Windows: -n jumlah, -w timeout (ms). Linux/macOS: -c jumlah, -W timeout (detik).
+    // windowsHide: true mencegah jendela CMD berkedip tiap kali ping dijalankan di Windows.
+    const args = win ? ['-n', '1', '-w', '2000', host] : ['-c', '1', '-W', '2', host];
+    execFile('ping', args, { timeout: 4000, windowsHide: true }, (err, out) => {
+      out = String(out || '');
+      // Windows tetap exit 0 untuk "Destination host unreachable": pastikan ada balasan (TTL=)
+      if (win && !/ttl[=:]/i.test(out)) return resolve(null);
+      // Terjemahan Windows bisa beda ("time"/"waktu"), maka cari angka "=NNms" atau "<1ms"
+      let m = /(?:time|waktu)\s*[=<]\s*([\d.]+)\s*ms/i.exec(out) || /[=<]\s*([\d.]+)\s*ms/i.exec(out);
+      resolve(m ? parseFloat(m[1]) : (win && /ttl[=:]/i.test(out) ? 1 : null));
     });
   });
 }
